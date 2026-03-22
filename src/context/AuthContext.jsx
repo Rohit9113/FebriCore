@@ -5,34 +5,38 @@ import { createContext, useContext, useEffect, useState } from "react";
 const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
-  const [admin, setAdmin] = useState(null);
+  const [admin,   setAdmin]   = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Load auth data from localStorage on first load
-    const token = localStorage.getItem("token");
-    const role = localStorage.getItem("role");
+    const token       = localStorage.getItem("token");
+    const role        = localStorage.getItem("role");
     const storedAdmin = localStorage.getItem("admin");
 
     if (token && role && storedAdmin) {
-      setAdmin({
-        token,
-        role,
-        ...JSON.parse(storedAdmin),
-      });
+      try {
+        setAdmin({ token, role, ...JSON.parse(storedAdmin) });
+      } catch {
+        // corrupted data — clear karo
+        localStorage.removeItem("token");
+        localStorage.removeItem("role");
+        localStorage.removeItem("admin");
+      }
     }
     setLoading(false);
   }, []);
 
   const login = (data) => {
     localStorage.setItem("token", data.token);
-    localStorage.setItem("role", data.role);
+    localStorage.setItem("role",  data.role || "SuperAdmin");
     localStorage.setItem("admin", JSON.stringify(data));
     setAdmin(data);
   };
 
+  // ✅ FIX: localStorage.clear() ki jagah sirf admin keys hatao
+  // Doosre browser data (emp_token etc.) safe rahega
   const logout = () => {
-    localStorage.clear();
+    ["token", "role", "admin"].forEach((k) => localStorage.removeItem(k));
     setAdmin(null);
     window.location.href = "/login";
   };
