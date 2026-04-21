@@ -1,70 +1,88 @@
+// app/api/dashboard/income/route.js
+//
+// ✅ FIX: Repairing income ab include hoti hai
+// Pehle sirf CompletedOrders se income aati thi
+// Ab Repairing entries bhi income mein count hoti hain
+
 import { connectDB }   from "@/lib/db";
 import CompletedOrder  from "@/app/api/orders/models/CompletedOrder";
+import Repairing       from "@/app/api/repairing/models/Repairing"; // ✅ NEW
 import { verifyAdmin } from "@/app/api/middleware/auth";
 
-// ─────────────────────────────────────────────────────────────────
-// GET  /api/dashboard/income
-// ?view=monthly&year=2025  |  ?view=yearly&years=5
-// ─────────────────────────────────────────────────────────────────
 export const GET = verifyAdmin(async (req) => {
   try {
     await connectDB();
 
     const { searchParams } = new URL(req.url);
     const view  = searchParams.get("view")  || "monthly";
-    const year  = parseInt(searchParams.get("year")  || new Date().getFullYear());
-    const years = parseInt(searchParams.get("years") || 5);
+
+    // ✅ FIX: parseInt with validation — NaN se bachao
+    const yearParam  = parseInt(searchParams.get("year"));
+    const yearsParam = parseInt(searchParams.get("years"));
+    const year  = !isNaN(yearParam)  ? yearParam  : new Date().getFullYear();
+    const years = !isNaN(yearsParam) ? yearsParam : 5;
 
     const buckets = view === "monthly"
       ? buildMonthlyBuckets(year)
       : buildYearlyBuckets(years);
 
-    // Fetch all completed orders
-    const orders = await CompletedOrder.find({}).lean();
+    // ✅ FIX: Dono sources fetch karo parallel mein
+    const [orders, repairingEntries] = await Promise.all([
+      CompletedOrder.find({}).lean(),
+      Repairing.find({}).lean(),       // ✅ NEW
+    ]);
 
-    console.log("Total completed orders found:", orders.length);
-
-    // ── Normalize → { date, totalAmount, receivedAmount, dueAmount }
-    // FIX: handle both old (finalAmount) and new (totalAmount) field names
-    // FIX: strip time from ISO date strings like "2025-03-05T10:30:00.000Z"
-    const items = orders.map((o) => {
+    // ── Orders normalize karo ─────────────────────────────────────
+    const orderItems = orders.map((o) => {
       const p = o.paymentReceive || {};
-
-      // Date: completedDate can be full ISO or YYYY-MM-DD, fallback to createdAt
       const rawDate = p.completedDate || o.createdAt;
       const date = toDateOnly(rawDate);
 
-      // DB mein: finalAmount = received amount, dueAmount = baaki
-      // total sale = finalAmount + dueAmount
       const receivedAmount = Number(p.finalAmount || p.receivedAmount || 0);
       const dueAmount      = Number(p.dueAmount   || 0);
       const totalAmount    = receivedAmount + dueAmount;
 
-      console.log(`Order: date=${date}, total=${totalAmount}, received=${receivedAmount}`);
-
-      return { date, totalAmount, receivedAmount, dueAmount };
+      return { date, totalAmount, receivedAmount, dueAmount, source: "order" };
     });
 
-    // ── Per-bucket aggregation
-    const income         = [];
-    const receivedAmount = [];
-    const dueAmount      = [];
-    const orderCount     = [];
+    // ✅ NEW: Repairing entries normalize karo
+    // Repairing income = received amount (koi due nahi hota)
+    const repairingItems = repairingEntries.map((r) => ({
+      date:            r.date || toDateOnly(r.createdAt),
+      totalAmount:     Number(r.amount || 0),
+      receivedAmount:  Number(r.amount || 0), // repairing mein full payment hoti hai
+      dueAmount:       0,
+      source:          "repairing", // ✅ source track karo
+    }));
+
+    // ── Dono sources combine karo ─────────────────────────────────
+    const allItems = [...orderItems, ...repairingItems];
+
+    // ── Per-bucket aggregation ────────────────────────────────────
+    const income          = [];
+    const receivedAmount  = [];
+    const dueAmount       = [];
+    const orderCount      = [];
+    const repairingIncome = []; // ✅ NEW: alag bhi track karo
 
     buckets.forEach(({ start, end }) => {
-      const filtered = items.filter((i) => i.date >= start && i.date <= end);
+      const filtered          = allItems.filter((i) => i.date >= start && i.date <= end);
+      const filteredRepairing = repairingItems.filter((i) => i.date >= start && i.date <= end);
+
       income.push(        filtered.reduce((s, i) => s + i.totalAmount,    0));
       receivedAmount.push(filtered.reduce((s, i) => s + i.receivedAmount, 0));
       dueAmount.push(     filtered.reduce((s, i) => s + i.dueAmount,      0));
       orderCount.push(    filtered.length);
+      repairingIncome.push(filteredRepairing.reduce((s, i) => s + i.totalAmount, 0)); // ✅
     });
 
-    // ── Summary
-    const totalIncome   = income.reduce((a, b) => a + b, 0);
-    const totalReceived = receivedAmount.reduce((a, b) => a + b, 0);
-    const totalDue      = dueAmount.reduce((a, b) => a + b, 0);
-    const totalOrders   = orderCount.reduce((a, b) => a + b, 0);
-    const avgOrderValue = totalOrders > 0 ? Math.round(totalIncome / totalOrders) : 0;
+    // ── Summary ───────────────────────────────────────────────────
+    const totalIncome         = income.reduce((a, b) => a + b, 0);
+    const totalReceived       = receivedAmount.reduce((a, b) => a + b, 0);
+    const totalDue            = dueAmount.reduce((a, b) => a + b, 0);
+    const totalOrders         = orderCount.reduce((a, b) => a + b, 0);
+    const totalRepairingIncome= repairingIncome.reduce((a, b) => a + b, 0); // ✅
+    const avgOrderValue       = totalOrders > 0 ? Math.round(totalIncome / totalOrders) : 0;
 
     const maxVal     = Math.max(...income);
     const bestIdx    = income.indexOf(maxVal);
@@ -82,6 +100,7 @@ export const GET = verifyAdmin(async (req) => {
         receivedAmount,
         dueAmount,
         orderCount,
+        repairingIncome, // ✅ NEW: frontend chart mein use kar sakte ho
         summary: {
           totalIncome,
           totalReceived,
@@ -89,6 +108,10 @@ export const GET = verifyAdmin(async (req) => {
           totalOrders,
           avgOrderValue,
           bestPeriod,
+          totalRepairingIncome, // ✅ NEW
+          // Breakdown for frontend
+          orderIncome:     totalIncome - totalRepairingIncome,
+          repairingIncome: totalRepairingIncome,
         },
       },
     }), { status: 200 });
@@ -103,14 +126,9 @@ export const GET = verifyAdmin(async (req) => {
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────
-
-// "2025-03-05T10:30:00.000Z" → "2025-03-05"
-// "2025-03-05" → "2025-03-05"
-// Date object → "2025-03-05"
 const toDateOnly = (d) => {
   if (!d) return "";
   const str = d instanceof Date ? d.toISOString() : String(d);
-  // Take only first 10 characters: "YYYY-MM-DD"
   return str.substring(0, 10);
 };
 

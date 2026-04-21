@@ -589,7 +589,7 @@ export default function HomePage() {
       {/* ── Footer ── */}
       <footer className="border-t border-white/[0.05] px-5 py-6 text-center relative z-10">
         <p className="text-[#2a2f45] text-xs">
-          © {new Date().getFullYear()} FabriCore · Sab rights reserved
+          © {new Date().getFullYear()} FabriCore ·All Rights Reserved
         </p>
       </footer>
     </div>

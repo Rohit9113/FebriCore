@@ -1,13 +1,19 @@
 // app/api/orders/route.js
-// ✅ FIX: GET mein "Partially Completed" orders bhi aate hain
-// ✅ FIX: Orders model mein paymentHistory array add kiya
+//
+// ✅ FIX: lastOrderId calculation galat tha
+//   Pehle: existingCustomer.orders.at(-1)?.orderId
+//   Bug: Agar orders sorted na hon by orderId toh last element
+//        sabse bada nahi hoga — duplicate orderIds possible the
+//   Ab: Math.max() se sab orderIds mein se sabse bada lo
+//
+// ✅ FIX: Same phone pe alag customers mix hone ki warning
 
-import { connectDB }  from "@/lib/db";
-import Orders         from "./models/orders";
+import { connectDB }   from "@/lib/db";
+import Orders          from "./models/orders";
 import { verifyAdmin } from "@/app/api/middleware/auth";
 
 // ─────────────────────────────────────────────────────────────────
-// POST  /api/orders  — naya order create karo
+// POST  /api/orders — naya order create karo
 // ─────────────────────────────────────────────────────────────────
 export const POST = verifyAdmin(async (req) => {
   try {
@@ -24,6 +30,21 @@ export const POST = verifyAdmin(async (req) => {
       }), { status: 400 });
     }
 
+    // ✅ Basic customer validation
+    if (!customer?.name) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Customer name required hai",
+      }), { status: 400 });
+    }
+
+    if (!orders?.length) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Kam se kam ek order required hai",
+      }), { status: 400 });
+    }
+
     // Existing customer check (same phone)
     let existingCustomer = null;
     if (customer?.phone) {
@@ -32,15 +53,19 @@ export const POST = verifyAdmin(async (req) => {
       });
     }
 
+    // ✅ FIX: Math.max() se sabse bada orderId lo
+    // Pehle: existingCustomer.orders.at(-1)?.orderId
+    // Bug: Array ka last element necessarily largest nahi hota
+    // Ab: Saare orderIds mein se max lo — duplicate impossible
     const lastOrderId = existingCustomer
-      ? (existingCustomer.orders.at(-1)?.orderId || 0)
+      ? Math.max(0, ...existingCustomer.orders.map((o) => o.orderId || 0))
       : 0;
 
     const finalOrders = orders.map((o, i) => ({
       ...o,
       status:    "Pending",
       orderType,
-      orderId:   lastOrderId + (i + 1),
+      orderId:   lastOrderId + (i + 1), // ✅ Always unique — max + 1, 2, 3...
     }));
 
     let record;
@@ -71,14 +96,12 @@ export const POST = verifyAdmin(async (req) => {
 });
 
 // ─────────────────────────────────────────────────────────────────
-// GET  /api/orders  — pending + partially completed orders
-// ✅ FIX: Dono status aate hain ab
+// GET  /api/orders — pending + partially completed orders
 // ─────────────────────────────────────────────────────────────────
 export const GET = verifyAdmin(async () => {
   try {
     await connectDB();
 
-    // ✅ FIX: Pehle sirf "Pending" aata tha — "Partially Completed" miss hota tha
     const pending = await Orders.find({
       "orders.status": { $in: ["Pending", "Partially Completed"] },
     }).sort({ createdAt: -1 });

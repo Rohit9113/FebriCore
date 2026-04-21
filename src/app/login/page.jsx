@@ -1,6 +1,7 @@
 "use client";
+// src/app/login/page.jsx
 import { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import axios from "axios";
@@ -24,9 +25,9 @@ function GridBackground() {
         style={{ background: "radial-gradient(circle, #f59e0b44 0%, transparent 70%)" }}
       />
       {[
-        { x: "8%",  y: "15%", size: 200, dur: 9  },
+        { x: "8%", y: "15%", size: 200, dur: 9 },
         { x: "82%", y: "65%", size: 240, dur: 12 },
-        { x: "55%", y: "8%",  size: 160, dur: 8  },
+        { x: "55%", y: "8%", size: 160, dur: 8 },
       ].map((o, i) => (
         <motion.div
           key={i}
@@ -43,26 +44,26 @@ function GridBackground() {
 // ─── 3D Tilt card ─────────────────────────────────────────────────
 function TiltCard({ children }) {
   const ref = useRef(null);
-  const x   = useMotionValue(0);
-  const y   = useMotionValue(0);
-  const rotateX = useTransform(y, [-0.5, 0.5], [5, -5]);
-  const rotateY = useTransform(x, [-0.5, 0.5], [-5, 5]);
+  const [rot, setRot] = useState({ x: 0, y: 0 });
 
   const onMove = (e) => {
     if (!ref.current) return;
     const r = ref.current.getBoundingClientRect();
-    x.set((e.clientX - r.left)  / r.width  - 0.5);
-    y.set((e.clientY - r.top)   / r.height - 0.5);
+    setRot({
+      x: ((e.clientY - r.top) / r.height - 0.5) * -5,
+      y: ((e.clientX - r.left) / r.width - 0.5) * 5,
+    });
   };
-  const onLeave = () => { x.set(0); y.set(0); };
+  const onLeave = () => setRot({ x: 0, y: 0 });
 
   return (
     <motion.div
       ref={ref}
       onMouseMove={onMove}
       onMouseLeave={onLeave}
-      style={{ rotateX, rotateY, transformStyle: "preserve-3d" }}
+      animate={{ rotateX: rot.x, rotateY: rot.y }}
       transition={{ type: "spring", stiffness: 280, damping: 28 }}
+      style={{ transformStyle: "preserve-3d" }}
     >
       {children}
     </motion.div>
@@ -70,57 +71,127 @@ function TiltCard({ children }) {
 }
 
 export default function LoginPage() {
-  const router         = useRouter();
+  const router = useRouter();
   const { admin, login } = useAuth();
 
-  const [phone,    setPhone]    = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [showPw,   setShowPw]   = useState(false);
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [shakeKey, setShakeKey] = useState(0);
 
   useEffect(() => {
     if (admin) router.replace("/dashboard");
   }, [admin, router]);
 
+  // ─── ✅ FIX BUG 7: Clean login logic ──────────────────────────
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
-      // ── Admin check ─────────────────────────────────────────
+      // ─── 1. Try Admin Login ─────────────────────────────
       try {
         const { data } = await axios.post("/api/admin/login", { phone, password });
+
         if (data?.success && data?.data?.token) {
           const { token, admin: a } = data.data;
-          login({ token, role: a.role, name: a.name, email: a.email, phone: a.phone });
+
+          login({
+            token,
+            role: a.role,
+            name: a.name,
+            email: a.email,
+            phone: a.phone,
+          });
+
           router.push("/dashboard");
           return;
         }
       } catch (adminErr) {
-        const s = adminErr?.response?.status;
-        if (s !== 404 && s !== 401 && s !== 403) throw adminErr;
+        const status = adminErr?.response?.status;
+        const errorMsg = adminErr?.response?.data?.error;
+
+        // ❌ Wrong credentials (Admin exists but wrong password)
+        if (status === 401) {
+          setError("Phone ya password galat hai");
+          setShakeKey((k) => k + 1);
+          return;
+        }
+
+        // ❌ Access denied / role issue
+        if (status === 403) {
+          setError(errorMsg || "Access denied — admin se baat karo");
+          setShakeKey((k) => k + 1);
+          return;
+        }
+
+        // ❌ Admin not found → try employee
+        if (status !== 404) {
+          throw adminErr;
+        }
       }
 
-      // ── Employee check ──────────────────────────────────────
-      const { data } = await axios.post("/api/employees/auth/login", { phone, password });
-      if (data?.success && data?.data?.token) {
-        const { token, employee } = data.data;
-        localStorage.setItem("emp_token", token);
-        localStorage.setItem("emp_name",  employee.name);
-        localStorage.setItem("emp_id",    String(employee._id));
-        localStorage.setItem("emp_empId", employee.empId);
-        router.push("/employee/dashboard");
-        return;
+      // ─── 2. Try Employee Login ───────────────────────────
+      try {
+        const { data } = await axios.post("/api/employees/auth/login", {
+          phone,
+          password,
+        });
+
+        if (data?.success && data?.data?.token) {
+          const { token, employee } = data.data;
+
+          localStorage.setItem("emp_token", token);
+          localStorage.setItem("emp_name", employee.name);
+          localStorage.setItem("emp_id", String(employee._id));
+          localStorage.setItem("emp_empId", employee.empId);
+
+          router.push("/employee/dashboard");
+          return;
+        }
+      } catch (empErr) {
+        const status = empErr?.response?.status;
+        const code = empErr?.response?.data?.code;
+        const errorMsg = empErr?.response?.data?.error;
+
+        // ❌ Deactivated account
+        if (status === 403 && code === "ACCOUNT_DEACTIVATED") {
+          setError("Aapka account deactivate hai — admin se baat karo");
+          setShakeKey((k) => k + 1);
+          return;
+        }
+
+        // ❌ Employee not found OR wrong password
+        if (status === 401 || status === 404) {
+          setError("Phone ya password galat hai");
+          setShakeKey((k) => k + 1);
+          return;
+        }
+
+        // ❌ Other server error
+        throw empErr;
       }
 
-      setError("Phone ya password galat hai");
+      // ❌ Final fallback (should rarely happen)
+      setError("Login failed — dobara try karo");
       setShakeKey((k) => k + 1);
 
-    } catch {
-      setError("Phone ya password galat hai");
+    } catch (err) {
+      // ✅ FIX 30: Dev-only guard — production mein console.error nahi dikhega
+      if (process.env.NODE_ENV === "development") {
+        console.error("Login error:", err);
+      }
+
+      // 🌐 Network / server issue
+      if (!err.response) {
+        setError("Internet ya server issue — dobara try karo");
+      } else {
+        setError("Server error — thodi der baad try karo");
+      }
+
       setShakeKey((k) => k + 1);
     } finally {
       setLoading(false);
@@ -136,7 +207,7 @@ export default function LoginPage() {
 
       <div className="w-full max-w-sm relative z-10">
 
-        {/* ── Logo ─────────────────────────────────────────────── */}
+        {/* ── Logo ──────────────────────────────────────────────── */}
         <motion.div
           initial={{ opacity: 0, y: -24 }}
           animate={{ opacity: 1, y: 0 }}
@@ -167,7 +238,7 @@ export default function LoginPage() {
           </p>
         </motion.div>
 
-        {/* ── Card ─────────────────────────────────────────────── */}
+        {/* ── Card ──────────────────────────────────────────────── */}
         <TiltCard>
           <motion.div
             key={shakeKey}
@@ -177,12 +248,15 @@ export default function LoginPage() {
                 ? { x: [-10, 10, -7, 7, -3, 3, 0], opacity: 1, y: 0, scale: 1 }
                 : { opacity: 1, y: 0, scale: 1 }
             }
-            transition={{ delay: shakeKey > 0 ? 0 : 0.2, duration: shakeKey > 0 ? 0.45 : 0.6, ease: [0.22, 1, 0.36, 1] }}
+            transition={{
+              delay: shakeKey > 0 ? 0 : 0.2,
+              duration: shakeKey > 0 ? 0.45 : 0.6,
+              ease: [0.22, 1, 0.36, 1],
+            }}
             className="relative bg-[#0d0f1e]/95 border border-white/[0.07] rounded-3xl p-7 overflow-hidden backdrop-blur-2xl shadow-2xl shadow-black/60"
           >
-            {/* Inner top highlight */}
+            {/* Inner highlights */}
             <div className="absolute top-0 left-10 right-10 h-px bg-gradient-to-r from-transparent via-amber-500/35 to-transparent" />
-            {/* Subtle corner glow */}
             <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
 
             <form onSubmit={handleLogin} className="relative space-y-5">
@@ -214,17 +288,15 @@ export default function LoginPage() {
                 <label className="block text-[10px] font-black uppercase tracking-[0.18em] text-[#3d4870] mb-2.5">
                   Phone Number
                 </label>
-                <div className="relative">
-                  <input
-                    type="tel"
-                    inputMode="numeric"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="9876543210"
-                    required
-                    className="w-full bg-[#080a13] border border-[#1a1e30] hover:border-[#272c42] focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/15 rounded-2xl px-4 py-4 text-white text-[15px] placeholder-[#272c42] outline-none transition-all duration-200"
-                  />
-                </div>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="9876543210"
+                  required
+                  className="w-full bg-[#080a13] border border-[#1a1e30] hover:border-[#272c42] focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/15 rounded-2xl px-4 py-4 text-white text-[15px] placeholder-[#272c42] outline-none transition-all duration-200"
+                />
               </motion.div>
 
               {/* Password */}
@@ -252,20 +324,20 @@ export default function LoginPage() {
                   >
                     {showPw ? (
                       <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
-                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
-                        <line x1="1" y1="1" x2="23" y2="23"/>
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                        <line x1="1" y1="1" x2="23" y2="23" />
                       </svg>
                     ) : (
                       <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
                       </svg>
                     )}
                   </button>
                 </div>
               </motion.div>
 
-              {/* Submit button */}
+              {/* Submit */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -280,7 +352,6 @@ export default function LoginPage() {
                   className="relative w-full h-[52px] rounded-2xl font-black text-[15px] overflow-hidden disabled:opacity-55 shadow-xl shadow-amber-500/20"
                 >
                   <div className="absolute inset-0 bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500" />
-                  {/* Shimmer */}
                   <motion.div
                     className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12"
                     initial={{ x: "-120%" }}

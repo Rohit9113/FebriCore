@@ -135,8 +135,13 @@ export default function Navbar() {
     router.replace("/login");
   }, [router]);
 
-  // ── Hide on employee dashboard (has its own full header) ─────
+  // ✅ FIX: Navbar un routes pe hide karo jinka apna layout hai
+  // /employee/dashboard — apna full header hai
+  // /dashboard          — apna sidebar + mobile tab bar hai
+  // Pehle sirf /employee/dashboard check tha — /dashboard miss tha
+  // Isliye Dashboard pe double navigation ban jaati thi aur layout toot ta tha
   if (pathname?.startsWith("/employee/dashboard")) return null;
+  if (pathname?.startsWith("/dashboard"))          return null;
 
   const isActive = (href) =>
     href === "/" ? pathname === "/" : pathname?.startsWith(href);

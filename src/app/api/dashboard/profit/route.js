@@ -1,109 +1,130 @@
 // app/api/dashboard/profit/route.js
 //
-// ✅ FIX: Profit ab REAL hai:
-//   profit = saleIncome - actualMaterialCost - expenses - salaries
+// ✅ FIX: Purane CompletedOrders mein totalMaterialCost missing hota tha
+//   Woh orders profit mein zero cost assume karte the — profit inflated dikhta tha
+//   Ab unhe clearly "legacy" mark kiya hai aur frontend ko warn karo
 //
-// ✅ FIX: Material cost per order se aata hai (purchase rate × kg used)
-//   Not from total goods purchased (jo galat tha pehle)
-//
-// ✅ NEW: Per-order gross profit track hota hai
-// ✅ NEW: Stock investment vs actual usage cost alag dikhta hai
+// ✅ FIX: parseInt NaN validation
+// ✅ FIX: Repairing income included (Step 1 se)
 
 import { connectDB }   from "@/lib/db";
 import CompletedOrder  from "@/app/api/orders/models/CompletedOrder";
 import Expense         from "@/app/api/expenses/models/Expense";
 import Employee        from "@/app/api/employees/models/Employee";
 import Goods           from "@/app/api/goods/model";
+import Repairing       from "@/app/api/repairing/models/Repairing";
 import { verifyAdmin } from "@/app/api/middleware/auth";
 
-// ─────────────────────────────────────────────────────────────────
-// GET  /api/dashboard/profit
-// ?view=monthly&year=2025   → 12 months
-// ?view=yearly&years=5      → last N years
-// ─────────────────────────────────────────────────────────────────
 export const GET = verifyAdmin(async (req) => {
   try {
     await connectDB();
 
     const { searchParams } = new URL(req.url);
-    const view  = searchParams.get("view")  || "monthly";
-    const year  = parseInt(searchParams.get("year")  || new Date().getFullYear());
-    const years = parseInt(searchParams.get("years") || 5);
+    const view = searchParams.get("view") || "monthly";
+
+    // ✅ FIX: parseInt with NaN check
+    const yearParam  = parseInt(searchParams.get("year"));
+    const yearsParam = parseInt(searchParams.get("years"));
+    const year  = !isNaN(yearParam)  ? yearParam  : new Date().getFullYear();
+    const years = !isNaN(yearsParam) ? yearsParam : 5;
 
     const buckets = view === "monthly"
       ? buildMonthlyBuckets(year)
       : buildYearlyBuckets(years);
 
-    // ── Parallel DB fetch ─────────────────────────────────────────
-    const [completedOrders, allExpenses, allEmployees] = await Promise.all([
-      CompletedOrder.find({}, "paymentReceive createdAt").lean(),
-      Expense.find({}, "amount date").lean(),
-      Employee.find({}, "salaryPayments").lean(),
-    ]);
+    const [completedOrders, allExpenses, allEmployees, repairingEntries] =
+      await Promise.all([
+        CompletedOrder.find({}, "paymentReceive createdAt").lean(),
+        Expense.find({}, "amount date").lean(),
+        Employee.find({}, "salaryPayments").lean(),
+        Repairing.find({}, "amount date createdAt").lean(),
+      ]);
 
-    // ─────────────────────────────────────────────────────────────
-    // ✅ INCOME & MATERIAL COST — from CompletedOrders
-    //
-    // OLD (WRONG):
-    //   income   = completed orders total sale
-    //   goods    = ALL goods purchased (wrong timing!)
-    //
-    // NEW (CORRECT):
-    //   income        = completed orders total sale
-    //   materialCost  = actual material used cost per order
-    //                   (purchase rate × kg used at time of completion)
-    // ─────────────────────────────────────────────────────────────
+    // ── ✅ FIX: Legacy orders track karo ─────────────────────────
+    // Purane orders jinmein totalMaterialCost field nahi thi
+    // Unhe count karo taaki frontend warn kar sake
+    let legacyOrderCount = 0;
+
     const incomeItems = completedOrders.map((o) => {
       const p       = o.paymentReceive || {};
       const rawDate = p.completedDate  || o.createdAt;
       const date    = toDateOnly(rawDate);
 
-      const receivedAmount  = Number(p.finalAmount || p.receivedAmount || 0);
-      const dueAmount       = Number(p.dueAmount   || 0);
-      const totalAmount     = receivedAmount + dueAmount;
-      const materialCost    = Number(p.totalMaterialCost || 0); // ✅ actual material cost
+      const receivedAmount = Number(p.finalAmount || p.receivedAmount || 0);
+      const dueAmount      = Number(p.dueAmount   || 0);
+      const totalAmount    = receivedAmount + dueAmount;
 
-      return { date, totalAmount, receivedAmount, dueAmount, materialCost };
+      // ✅ FIX: totalMaterialCost check
+      // Purane orders mein yeh field nahi thi — 0 assume karna GALAT hai
+      // Isliye legacy flag lagao
+      const hasMaterialCost = p.totalMaterialCost !== undefined &&
+                              p.totalMaterialCost !== null;
+      const materialCost    = hasMaterialCost ? Number(p.totalMaterialCost) : 0;
+
+      if (!hasMaterialCost && totalAmount > 0) {
+        legacyOrderCount++; // ✅ Track legacy orders
+      }
+
+      return { date, totalAmount, receivedAmount, dueAmount, materialCost, isLegacy: !hasMaterialCost };
     });
 
-    // Expenses (fuel, hardware, etc.) — unchanged
-    const expenseItems = allExpenses.map((e) => ({
-      date:   e.date   || "",
-      amount: e.amount || 0,
+    // Repairing items
+    const repairingItems = repairingEntries.map((r) => ({
+      date:          r.date || toDateOnly(r.createdAt),
+      totalAmount:   Number(r.amount || 0),
+      receivedAmount:Number(r.amount || 0),
+      dueAmount:     0,
+      materialCost:  0,
+      isLegacy:      false,
     }));
 
-    // Salaries — unchanged
+    const expenseItems = allExpenses.map((e) => ({
+      date: e.date || "", amount: e.amount || 0,
+    }));
+
     const salaryItems = allEmployees.flatMap((emp) =>
       (emp.salaryPayments || []).map((p) => ({
-        date:   p.paidOn || "",
-        amount: p.amount || 0,
+        date: p.paidOn || "", amount: p.amount || 0,
       }))
     );
 
     // ── Per-bucket aggregation ────────────────────────────────────
     const income       = [];
-    const materialCost = []; // ✅ actual material cost per period
+    const materialCost = [];
     const expenses     = [];
     const salaries     = [];
     const totalCost    = [];
     const profit       = [];
-
-    // receivedAmount aur dueAmount bhi track karo
     const received     = [];
     const due          = [];
+    const repairingInc = [];
+    const legacyIncome = []; // ✅ FIX: Legacy orders ka income alag track karo
 
     buckets.forEach(({ start, end }) => {
-      const filteredIncome   = incomeItems.filter(  (i) => i.date >= start && i.date <= end);
-      const filteredExpenses = expenseItems.filter( (i) => i.date >= start && i.date <= end);
-      const filteredSalaries = salaryItems.filter(  (i) => i.date >= start && i.date <= end);
+      const inRange = (i) => i.date >= start && i.date <= end;
 
-      const inc = filteredIncome.reduce((s, i) => s + i.totalAmount,  0);
-      const mat = filteredIncome.reduce((s, i) => s + i.materialCost, 0); // ✅ actual
+      const filteredOrders    = incomeItems.filter(inRange);
+      const filteredRepairing = repairingItems.filter(inRange);
+      const filteredExpenses  = expenseItems.filter(inRange);
+      const filteredSalaries  = salaryItems.filter(inRange);
+
+      const orderInc  = filteredOrders.reduce((s, i) => s + i.totalAmount, 0);
+      const repairInc = filteredRepairing.reduce((s, i) => s + i.totalAmount, 0);
+      const inc       = orderInc + repairInc;
+
+      const mat = filteredOrders.reduce((s, i) => s + i.materialCost, 0);
       const exp = filteredExpenses.reduce((s, i) => s + i.amount, 0);
       const sal = filteredSalaries.reduce((s, i) => s + i.amount, 0);
-      const cst = mat + exp + sal; // ✅ REAL total cost
-      const rec = filteredIncome.reduce((s, i) => s + i.receivedAmount, 0);
-      const due_ = filteredIncome.reduce((s, i) => s + i.dueAmount,    0);
+      const cst = mat + exp + sal;
+
+      const rec  = filteredOrders.reduce((s, i) => s + i.receivedAmount, 0)
+                 + filteredRepairing.reduce((s, i) => s + i.receivedAmount, 0);
+      const due_ = filteredOrders.reduce((s, i) => s + i.dueAmount, 0);
+
+      // ✅ FIX: Legacy income track karo — jinmein material cost nahi thi
+      const legInc = filteredOrders
+        .filter(i => i.isLegacy)
+        .reduce((s, i) => s + i.totalAmount, 0);
 
       income.push(Math.round(inc));
       materialCost.push(Math.round(mat));
@@ -113,9 +134,10 @@ export const GET = verifyAdmin(async (req) => {
       profit.push(Math.round(inc - cst));
       received.push(Math.round(rec));
       due.push(Math.round(due_));
+      repairingInc.push(Math.round(repairInc));
+      legacyIncome.push(Math.round(legInc));
     });
 
-    // ── Grand totals ──────────────────────────────────────────────
     const s              = (arr) => arr.reduce((a, b) => a + b, 0);
     const totalIncome    = s(income);
     const totalMaterial  = s(materialCost);
@@ -126,8 +148,9 @@ export const GET = verifyAdmin(async (req) => {
     const profitMargin   = totalIncome > 0
       ? parseFloat(((totalProfit / totalIncome) * 100).toFixed(2))
       : 0;
+    const totalRepairingIncome = s(repairingInc);
+    const totalLegacyIncome    = s(legacyIncome); // ✅
 
-    // Best / worst periods
     const activePeriods = profit
       .map((p, i) => ({ profit: p, label: buckets[i].label, income: income[i] }))
       .filter((p) => p.income > 0 || p.profit !== 0);
@@ -139,21 +162,12 @@ export const GET = verifyAdmin(async (req) => {
       ? activePeriods.reduce((a, b) => (a.profit < b.profit ? a : b))
       : null;
 
-    // Cost breakdown %
-    const goodsPct    = totalCostSum > 0 ? +((totalMaterial  / totalCostSum) * 100).toFixed(1) : 0;
-    const expensesPct = totalCostSum > 0 ? +((totalExpenses  / totalCostSum) * 100).toFixed(1) : 0;
-    const salariesPct = totalCostSum > 0 ? +((totalSalaries  / totalCostSum) * 100).toFixed(1) : 0;
+    const goodsPct    = totalCostSum > 0 ? +((totalMaterial / totalCostSum) * 100).toFixed(1) : 0;
+    const expensesPct = totalCostSum > 0 ? +((totalExpenses / totalCostSum) * 100).toFixed(1) : 0;
+    const salariesPct = totalCostSum > 0 ? +((totalSalaries / totalCostSum) * 100).toFixed(1) : 0;
 
-    // ── ✅ NEW: Stock purchase info (separate from profit calc) ───
-    // Ye sirf investment reference ke liye hai — profit mein count nahi
     const allGoods = await Goods.aggregate([
-      {
-        $group: {
-          _id:         null,
-          totalPurchased: { $sum: "$totalKg" },
-          totalInvested:  { $sum: "$totalAmount" },
-        },
-      },
+      { $group: { _id: null, totalPurchased: { $sum: "$totalKg" }, totalInvested: { $sum: "$totalAmount" } } },
     ]);
     const stockInfo = allGoods[0] || { totalPurchased: 0, totalInvested: 0 };
 
@@ -163,41 +177,49 @@ export const GET = verifyAdmin(async (req) => {
         view,
         year:   view === "monthly" ? year : null,
         labels: buckets.map((b) => b.label),
-
-        // Chart data
         income,
-        goods:       materialCost, // ✅ Actual material cost used (not purchased)
+        goods:       materialCost,
         expenses,
         salaries,
         totalCost,
         profit,
         received,
         due,
+        repairingIncome: repairingInc,
 
         summary: {
           totalIncome,
-          totalGoods:     totalMaterial,    // ✅ actual material cost used
+          totalGoods:          totalMaterial,
           totalExpenses,
           totalSalaries,
-          totalCost:      totalCostSum,
+          totalCost:           totalCostSum,
           totalProfit,
           profitMargin,
-          isProfit:       totalProfit >= 0,
+          isProfit:            totalProfit >= 0,
           bestPeriod,
           worstPeriod,
+          totalRepairingIncome,
+          orderIncome:         totalIncome - totalRepairingIncome,
         },
 
-        costBreakdown: {
-          goodsPct,
-          expensesPct,
-          salariesPct,
-        },
+        costBreakdown: { goodsPct, expensesPct, salariesPct },
 
-        // ✅ NEW: Stock investment info (reference only)
         stockInfo: {
           totalPurchased: stockInfo.totalPurchased,
           totalInvested:  stockInfo.totalInvested,
-          note: "Ye total goods purchase hai — profit calculation mein actual usage cost use hoti hai",
+        },
+
+        // ✅ FIX: Legacy order warning — frontend ko batao
+        // Purane orders jinmein material cost track nahi tha
+        // Unka profit calculation accurate nahi hai
+        dataQuality: {
+          legacyOrderCount,
+          legacyIncome: totalLegacyIncome,
+          // ✅ Agar legacy orders hain toh frontend warning dikha sakta hai
+          hasLegacyData: legacyOrderCount > 0,
+          warning: legacyOrderCount > 0
+            ? `${legacyOrderCount} purane orders mein material cost data nahi hai — profit underestimated ho sakta hai`
+            : null,
         },
       },
     }), { status: 200 });
@@ -211,9 +233,7 @@ export const GET = verifyAdmin(async (req) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────
 const toDateOnly = (d) => {
   if (!d) return "";
   const str = d instanceof Date ? d.toISOString() : String(d);

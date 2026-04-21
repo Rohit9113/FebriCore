@@ -1,17 +1,24 @@
+// src/app/layout.jsx
+// ✅ NEW: ThemeProvider added for dark/light toggle
+
 import "./globals.css";
-import Navbar from "@/components/Navbar";
-import { AuthProvider } from "@/context/AuthContext";
+import { AuthProvider }  from "@/context/AuthContext";
+import { ThemeProvider } from "@/context/ThemeContext"; // ✅ NEW
+import ThemeScript       from "@/components/ThemeScript"; // ✅ NEW — flash prevent
 
 export const metadata = {
-  title: "FabriCore",
+  title:       "FabriCore",
   description: "Smart business management system",
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="dark" suppressHydrationWarning>
       <head>
-        <link rel="icon" href="/src/app/weldicon.png" />
+        {/* ✅ NEW: ThemeScript — page load pe theme flash prevent karta hai */}
+        <ThemeScript />
+
+        <link rel="icon" href="/weldicon.png" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
@@ -24,14 +31,15 @@ export default function RootLayout({ children }) {
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
       <body
-        className="bg-[#0d0f18] text-white antialiased"
+        className="antialiased"
         style={{ fontFamily: "'DM Sans', sans-serif" }}
       >
-        <AuthProvider>
-          <Navbar />
-          {/* pt-16 accounts for fixed 64px navbar */}
-          <main className="pt-16">{children}</main>
-        </AuthProvider>
+        {/* ThemeProvider wraps everything — useTheme() kahi bhi kaam karega */}
+        <ThemeProvider>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

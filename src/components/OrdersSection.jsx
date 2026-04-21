@@ -10,7 +10,7 @@ api.interceptors.request.use((cfg) => {
   return cfg;
 });
 
-const ORDER_TYPES = ["Normal Order", "Contract", "Repairing"];
+const ORDER_TYPES = ["Normal Order", "Contract"];
 const METAL_TYPES = ["MS", "GI", "SS", "Other"];
 const EMPTY_ORDER = () => ({ itemName:"", metalType:"MS", height:"", width:"", perKgRate:"", extraCharge:"", description:"", amount:"" });
 const TODAY = new Date().toISOString().split("T")[0];
@@ -132,29 +132,122 @@ function MetalPill({ label, selected, onClick }) {
 }
 
 const TYPE_META = {
-  "Normal Order": { icon:"🔧", desc:"Weight-based calculation", color:"#f59e0b" },
-  "Contract":     { icon:"📋", desc:"Fixed amount deal",        color:"#3b82f6" },
-  "Repairing":    { icon:"🔩", desc:"Repair & restoration",     color:"#10b981" },
+  "Normal Order": {
+    icon: "⚖️",
+    label: "Normal Order",
+    desc: "Weight × Rate",
+    tag: "Per Kg",
+    color: "#f59e0b",
+    glow: "#f59e0b",
+    grad: "linear-gradient(135deg, #f59e0b22 0%, #f9730010 100%)",
+    shimmer: "#f59e0b",
+  },
+  "Contract": {
+    icon: "📋",
+    label: "Contract",
+    desc: "Fixed Amount",
+    tag: "Lump Sum",
+    color: "#3b82f6",
+    glow: "#3b82f6",
+    grad: "linear-gradient(135deg, #3b82f622 0%, #6366f110 100%)",
+    shimmer: "#3b82f6",
+  },
 };
+
 function OrderTypeCard({ type, selected, onClick }) {
   const m = TYPE_META[type];
   return (
-    <MagneticCard onClick={onClick} selected={selected} className="relative rounded-2xl">
-      <motion.div animate={{ borderColor:selected?`${m.color}55`:"#1e2235", background:selected?`${m.color}08`:"#0c0e1a", boxShadow:selected?`0 4px 30px ${m.color}15, inset 0 1px 0 ${m.color}22`:"none" }}
-        transition={{duration:0.25}} className="relative w-full text-left rounded-2xl border p-4 overflow-hidden z-0">
-        <motion.div animate={{scaleY:selected?1:0,opacity:selected?1:0}} style={{transformOrigin:"bottom",background:m.color}}
-          transition={{type:"spring",stiffness:400,damping:28}} className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full" />
-        {selected && <motion.div initial={{opacity:0}} animate={{opacity:1}} className="absolute -top-6 -right-6 w-20 h-20 rounded-full blur-2xl pointer-events-none" style={{background:`${m.color}30`}} />}
-        <div className="flex items-center gap-3 pl-3">
-          <motion.span animate={{scale:selected?1.3:1,rotate:selected?[0,-12,0]:0}} transition={{duration:0.4,ease:"easeInOut"}} className="text-2xl flex-shrink-0">{m.icon}</motion.span>
-          <div className="flex-1 min-w-0">
-            <p className="font-black text-sm" style={{color:selected?m.color:"#6b7a99"}}>{type}</p>
-            <p className="text-[10px] text-[#2e3248] mt-0.5">{m.desc}</p>
-          </div>
-          <AnimatePresence>
-            {selected && <motion.div key="check" initial={{scale:0,rotate:-90,opacity:0}} animate={{scale:1,rotate:0,opacity:1}} exit={{scale:0,opacity:0}} transition={{type:"spring",stiffness:600,damping:20}} className="w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black flex-shrink-0" style={{background:`${m.color}22`,color:m.color}}>✓</motion.div>}
-          </AnimatePresence>
+    <MagneticCard onClick={onClick} selected={selected} className="relative rounded-2xl h-full">
+      <motion.div
+        animate={{
+          borderColor: selected ? `${m.color}60` : "#1e2235",
+          background:  selected ? m.grad : "#0c0e1a",
+          boxShadow:   selected
+            ? `0 0 0 1px ${m.color}30, 0 8px 32px ${m.glow}20, inset 0 1px 0 ${m.color}25`
+            : "none",
+        }}
+        transition={{ duration: 0.22 }}
+        className="relative w-full rounded-2xl border overflow-hidden z-0 flex flex-col items-center justify-center gap-3 py-6 px-4"
+        style={{ minHeight: "130px" }}
+      >
+        {/* Animated glow blob behind icon — only when selected */}
+        <motion.div
+          animate={{ opacity: selected ? 1 : 0, scale: selected ? 1 : 0.6 }}
+          transition={{ duration: 0.3 }}
+          className="absolute top-2 left-1/2 -translate-x-1/2 w-20 h-20 rounded-full blur-2xl pointer-events-none"
+          style={{ background: `${m.glow}35` }}
+        />
+
+        {/* Shimmer sweep on selected */}
+        {selected && (
+          <motion.div
+            animate={{ x: ["-120%", "220%"] }}
+            transition={{ duration: 2, repeat: Infinity, ease: "linear", repeatDelay: 1.2 }}
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: `linear-gradient(90deg, transparent, ${m.shimmer}18, transparent)`,
+              transform: "skewX(-12deg)",
+            }}
+          />
+        )}
+
+        {/* Corner check badge */}
+        <AnimatePresence>
+          {selected && (
+            <motion.div
+              key="badge"
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 500, damping: 22 }}
+              className="absolute top-2.5 right-2.5 w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black"
+              style={{ background: `${m.color}25`, color: m.color, border: `1px solid ${m.color}40` }}
+            >✓</motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Icon */}
+        <motion.div
+          animate={{
+            scale:    selected ? 1.15 : 1,
+            rotate:   selected ? [0, -8, 8, 0] : 0,
+          }}
+          transition={{ duration: 0.4, ease: "easeInOut" }}
+          className="relative z-10 w-12 h-12 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0"
+          style={{
+            background: selected ? `${m.color}20` : "#141620",
+            border:     `1px solid ${selected ? m.color + "40" : "#1e2235"}`,
+            boxShadow:  selected ? `0 4px 16px ${m.glow}30` : "none",
+          }}
+        >
+          {m.icon}
+        </motion.div>
+
+        {/* Text block — center aligned, fixed structure */}
+        <div className="relative z-10 flex flex-col items-center gap-1 text-center">
+          <p
+            className="font-black text-sm leading-tight transition-colors duration-200"
+            style={{ color: selected ? m.color : "#6b7a99" }}
+          >
+            {m.label}
+          </p>
+          <p className="text-[10px] leading-tight" style={{ color: selected ? `${m.color}80` : "#2e3248" }}>
+            {m.desc}
+          </p>
         </div>
+
+        {/* Tag pill */}
+        <motion.div
+          animate={{
+            background:   selected ? `${m.color}18` : "#141620",
+            borderColor:  selected ? `${m.color}35` : "#1e2235",
+            color:        selected ? m.color : "#3d4260",
+          }}
+          transition={{ duration: 0.2 }}
+          className="relative z-10 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border"
+        >
+          {m.tag}
+        </motion.div>
       </motion.div>
     </MagneticCard>
   );
@@ -401,7 +494,6 @@ export default function OrdersSection() {
           className="w-11 h-11 rounded-2xl flex items-center justify-center text-xl flex-shrink-0"
           style={{background:"#f59e0b15",border:"1px solid #f59e0b25"}}>🔨</motion.div>
         <div className="flex-1 min-w-0">
-          <h2 className="text-white font-black text-lg leading-none" style={{fontFamily:"'Syne',sans-serif"}}>Naya Order</h2>
           <p className="text-[#2e3248] text-xs mt-0.5">Customer details aur kaam ka detail bharo</p>
         </div>
         <div className="flex items-center gap-1">
@@ -442,7 +534,7 @@ export default function OrdersSection() {
               transition={{type:"spring",damping:32,stiffness:300}} className="space-y-5">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#3d4260] mb-3">Order Type</p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-2 gap-2.5 max-w-sm mx-auto w-full">
                   {ORDER_TYPES.map(type=><OrderTypeCard key={type} type={type} selected={customer.orderType===type} onClick={()=>setField("orderType",type)} />)}
                 </div>
               </div>
@@ -457,7 +549,7 @@ export default function OrdersSection() {
                 )}
               </AnimatePresence>
               <ShimmerBtn active={canS2} onClick={()=>canS2?goTo(2):showToast("Type, naam aur phone required hai","error")} className="w-full h-14 rounded-2xl text-base mt-2">
-                {canS2?"Aage Jao →":"Pehle details bharo"}
+                {canS2?"Next →":"First Fill the all details"}
               </ShimmerBtn>
             </motion.div>
           </AnimatePresence>

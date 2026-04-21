@@ -1,3 +1,4 @@
+//src/app/employee/dashboard/page.jsx
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence, useMotionValue, animate } from "framer-motion";

@@ -1,19 +1,17 @@
 //app/api/expenses/[id]/route.js
+
 import { connectDB } from "@/lib/db";
 import Expense from "../models/Expense";
 import { verifyAdmin } from "@/app/api/middleware/auth";
 
 // ─────────────────────────────────────────────
 // PATCH  /api/expenses/[id]
-// Update an existing expense
-// Body: any of { category, desc, qty, unit, rate, amount, date }
 // ─────────────────────────────────────────────
 export const PATCH = verifyAdmin(async (req, context) => {
   try {
     await connectDB();
 
-    // ✅ FIX HERE
-    const { id } = await context.params;
+    const { id } = await context.params; // ✅ Next.js 15 — await required
 
     const body = await req.json();
     const allowedFields = ["category", "desc", "qty", "unit", "rate", "amount", "date"];
@@ -59,12 +57,15 @@ export const PATCH = verifyAdmin(async (req, context) => {
 
 // ─────────────────────────────────────────────
 // DELETE  /api/expenses/[id]
-// Delete an expense permanently
+// ✅ FIX: params ko await karo — Next.js 15 mein params async hai
+// Pehle: const { id } = params        ← CRASH in Next.js 15
+// Ab:    const { id } = await context.params  ← CORRECT
 // ─────────────────────────────────────────────
-export const DELETE = verifyAdmin(async (req, { params }) => {
+export const DELETE = verifyAdmin(async (req, context) => {
   try {
     await connectDB();
-    const { id } = params;
+
+    const { id } = await context.params; // ✅ FIXED — was: const { id } = params
 
     const deleted = await Expense.findByIdAndDelete(id);
 

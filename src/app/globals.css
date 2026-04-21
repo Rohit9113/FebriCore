@@ -1,10 +1,114 @@
+/* src/app/globals.css
+**
+** ✅ NEW: Dark + Light theme support via CSS variables
+**
+** Kaise kaam karta hai:
+**   - data-theme="dark"  → dark variables active
+**   - data-theme="light" → light variables active
+**   - Default: dark (server-side render ke liye bhi safe)
+**
+** Component migration guide:
+**   Hardcoded:  background: "#0d0f1e"
+**   Migrated:   background: var(--bg-primary)
+**
+**   Hardcoded:  color: "#ffffff"
+**   Migrated:   color: var(--text-primary)
+*/
+
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ─── Dark Theme (default) ─────────────────────────────────────── */
+:root,
+[data-theme="dark"] {
+  /* Backgrounds */
+  --bg-base:        #06080f;   /* Page base */
+  --bg-primary:     #0d0f1e;   /* Cards, modals */
+  --bg-secondary:   #0c0e1a;   /* Input fields */
+  --bg-tertiary:    #08090f;   /* Deeper sections */
+  --bg-hover:       rgba(255,255,255,0.04);
+  --bg-glass:       rgba(13,15,30,0.95);
+
+  /* Borders */
+  --border-primary: #1e2235;
+  --border-subtle:  rgba(255,255,255,0.06);
+  --border-focus:   rgba(245,158,11,0.5);
+
+  /* Text */
+  --text-primary:   #ffffff;
+  --text-secondary: #6b7a99;
+  --text-muted:     #3d4260;
+  --text-faint:     #2e3248;
+  --text-placeholder: #2a3050;
+
+  /* Accents (same in both themes) */
+  --accent-amber:   #f59e0b;
+  --accent-green:   #10b981;
+  --accent-blue:    #3b82f6;
+  --accent-red:     #ef4444;
+  --accent-purple:  #a855f7;
+  --accent-orange:  #f97316;
+
+  /* Sidebar */
+  --sidebar-bg:     #080a14;
+  --sidebar-border: #1e2235;
+
+  /* Scrollbar */
+  --scrollbar-track:  #0d0f18;
+  --scrollbar-thumb:  #1e2235;
+  --scrollbar-hover:  #2e3248;
+
+  /* System */
+  --background: #0d0f18;
+  --foreground: #ffffff;
+  color-scheme: dark;
 }
 
+/* ─── Light Theme ────────────────────────────────────────────────── */
+[data-theme="light"] {
+  /* Backgrounds */
+  --bg-base:        #f8fafc;
+  --bg-primary:     #ffffff;
+  --bg-secondary:   #f1f5f9;
+  --bg-tertiary:    #e8eef5;
+  --bg-hover:       rgba(0,0,0,0.04);
+  --bg-glass:       rgba(255,255,255,0.95);
+
+  /* Borders */
+  --border-primary: #e2e8f0;
+  --border-subtle:  rgba(0,0,0,0.06);
+  --border-focus:   rgba(245,158,11,0.6);
+
+  /* Text */
+  --text-primary:   #0f172a;
+  --text-secondary: #475569;
+  --text-muted:     #94a3b8;
+  --text-faint:     #cbd5e1;
+  --text-placeholder: #94a3b8;
+
+  /* Accents stay same */
+  --accent-amber:   #d97706;   /* slightly darker amber for light bg */
+  --accent-green:   #059669;
+  --accent-blue:    #2563eb;
+  --accent-red:     #dc2626;
+  --accent-purple:  #9333ea;
+  --accent-orange:  #ea580c;
+
+  /* Sidebar */
+  --sidebar-bg:     #f1f5f9;
+  --sidebar-border: #e2e8f0;
+
+  /* Scrollbar */
+  --scrollbar-track: #f1f5f9;
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-hover: #94a3b8;
+
+  /* System */
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  color-scheme: light;
+}
+
+/* ─── Tailwind theme mapping ─────────────────────────────────────── */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -12,15 +116,85 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* ─── Base styles ────────────────────────────────────────────────── */
+body {
+  background:  var(--bg-base);
+  color:       var(--text-primary);
+  font-family: Arial, Helvetica, sans-serif;
+  transition:  background 0.3s ease, color 0.3s ease;
+}
+
+/* ─── Light mode — override dark hardcoded colors ────────────────── */
+/* These target the most common dark patterns in FabriCore components */
+[data-theme="light"] {
+
+  /* Page backgrounds */
+  .bg-\[\#06080f\], .bg-\[\#0d0f1e\], .bg-\[\#0c0e1a\],
+  .bg-\[\#08090f\], .bg-\[\#080a14\], .bg-\[\#080a12\],
+  .bg-\[\#0d0f1e\]\/95 {
+    background-color: var(--bg-secondary) !important;
+  }
+
+  /* Text colors */
+  .text-white   { color: var(--text-primary)   !important; }
+  .text-gray-400 { color: var(--text-secondary) !important; }
+  .text-gray-500 { color: var(--text-muted)     !important; }
+  .text-gray-600 { color: var(--text-faint)     !important; }
+
+  /* Borders */
+  .border-\[\#1e2235\] { border-color: var(--border-primary) !important; }
+  .border-white\/10    { border-color: rgba(0,0,0,0.1)       !important; }
+  .border-white\/8     { border-color: rgba(0,0,0,0.08)      !important; }
+
+  /* Placeholder */
+  .placeholder-\[\#2e3248\]::placeholder,
+  .placeholder-\[\#2a3050\]::placeholder,
+  .placeholder-\[\#1e2235\]::placeholder {
+    color: var(--text-placeholder) !important;
+  }
+
+  /* Input fields */
+  input, textarea, select {
+    background-color: var(--bg-primary)  !important;
+    color:            var(--text-primary) !important;
+    border-color:     var(--border-primary) !important;
+  }
+
+  /* Backdrop blur on modals */
+  [style*="background:rgba(0,0,0,0.7)"],
+  [style*="background: rgba(0,0,0,0.7)"] {
+    background: rgba(15,23,42,0.6) !important;
+  }
+
+  /* Dashboard sidebar */
+  aside {
+    background: var(--sidebar-bg)     !important;
+    border-color: var(--sidebar-border) !important;
+  }
+
+  /* Smooth transition for all elements */
+  *, *::before, *::after {
+    transition: background-color 0.25s ease, border-color 0.25s ease, color 0.2s ease;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ─── Scrollbar ──────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width:  6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background:    var(--scrollbar-thumb);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-hover);
+}
+
+/* ─── Smooth theme transition ────────────────────────────────────── */
+html {
+  transition: background-color 0.3s ease;
 }

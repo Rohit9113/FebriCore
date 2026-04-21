@@ -105,10 +105,7 @@ export default function IncomeSection() {
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="text-2xl font-black text-white tracking-tight" style={{ fontFamily: "'Syne', sans-serif" }}>
-            💰 Income
-          </h1>
-          <p className="text-[#4a5170] text-sm mt-0.5">Completed orders se total earnings</p>
+          <p className="text-[#4a5170] text-sm mt-0.5">Behind every earning is a completed task.</p>
         </div>
         <button onClick={() => { fetchIncome(); fetchOrders(); }}
           className="w-10 h-10 flex items-center justify-center bg-white/5 border border-white/8 rounded-2xl text-gray-400 hover:text-white active:scale-90 transition-all">

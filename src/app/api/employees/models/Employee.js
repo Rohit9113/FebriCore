@@ -1,3 +1,9 @@
+// app/api/employees/models/Employee.js
+//
+// ✅ FIX: plainPassword field DB se hata diya
+// Plain text password kabhi bhi DB mein save nahi hona chahiye
+// Admin ko password sirf ek baar response mein dikhao — store mat karo
+
 import mongoose from "mongoose";
 
 const SalaryHistorySchema = new mongoose.Schema(
@@ -31,7 +37,11 @@ const EmployeeSchema = new mongoose.Schema(
   {
     empId:         { type: String, required: true, unique: true },
     name:          { type: String, required: true, trim: true },
-    phone:         { type: String, required: true, trim: true },
+
+    // ✅ FIX: phone pe unique index add kiya DB level pe
+    // Pehle sirf route level pe check tha — race condition possible tha
+    phone:         { type: String, required: true, trim: true, unique: true },
+
     address:       { type: String, default: "" },
     joiningDate:   { type: String, required: true },
     isActive:      { type: Boolean, default: true },
@@ -41,13 +51,16 @@ const EmployeeSchema = new mongoose.Schema(
     salaryHistory: { type: [SalaryHistorySchema], default: [] },
 
     // ── Login credentials ──────────────────────────────────────
-    // Auto-generated on employee creation:
-    //   password = name first 3 letters (uppercase) + phone last 4 digits
-    //   e.g. name="Ramesh Kumar", phone="9876543210" → "RAM3210"
-    //
-    // select: false → never returned in normal queries
-    password:      { type: String, select: false },
-    plainPassword: { type: String, select: false }, // admin ko dikhane ke liye
+    // Auto-generated: name first 3 (uppercase) + phone last 4 digits
+    // e.g. "Ramesh Kumar" + "9876543210" → "RAM3210"
+    // select: false → normal queries mein kabhi nahi aata
+    password: { type: String, select: false },
+
+    // ✅ FIX: plainPassword field HATA DIYA
+    // Pehle: plainPassword: { type: String, select: false }
+    // Yeh plain text password DB mein store karta tha — BAHUT BADI security hole
+    // Ab password sirf employee create karte waqt ek baar response mein
+    // dikhaya jaata hai — DB mein kabhi save nahi hoga
 
     // ── Work data ──────────────────────────────────────────────
     attendance:     { type: Map, of: AttendanceEntrySchema, default: {} },

@@ -1,10 +1,15 @@
+// app/api/employees/route.js
+//
+// ✅ FIX: plainPassword ab DB mein save nahi hoti
+// Sirf ek baar response mein dikhao — phir gone
+// Admin ko bolna chahiye ki yeh password note kar le
+
 import { connectDB }  from "@/lib/db";
 import Employee       from "./models/Employee";
 import { verifyAdmin } from "@/app/api/middleware/auth";
 import bcrypt         from "bcryptjs";
 
 // ─── Helpers ─────────────────────────────────────────────────────
-
 const generateEmpId = (name, phone, count) => {
   const namePart  = name.trim().replace(/\s+/g, "").substring(0, 3).toUpperCase();
   const phonePart = String(phone).replace(/\D/g, "").slice(-4);
@@ -12,8 +17,6 @@ const generateEmpId = (name, phone, count) => {
   return `${namePart}-${phonePart}-${seq}`;
 };
 
-// Password: name first 3 (uppercase) + phone last 4 digits
-// e.g. "Ramesh Kumar" + "9876543210" → "RAM3210"
 const generatePassword = (name, phone) => {
   const namePart  = name.trim().replace(/\s+/g, "").substring(0, 3).toUpperCase();
   const phonePart = String(phone).replace(/\D/g, "").slice(-4);
@@ -21,8 +24,7 @@ const generatePassword = (name, phone) => {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// POST  /api/employees  —  Naya employee register karo
-// Body: { name, phone, address?, joiningDate?, perDaySalary }
+// POST  /api/employees — Naya employee register
 // ─────────────────────────────────────────────────────────────────
 export const POST = verifyAdmin(async (req) => {
   try {
@@ -31,7 +33,6 @@ export const POST = verifyAdmin(async (req) => {
     const body = await req.json();
     const { name, phone, address, joiningDate, perDaySalary } = body;
 
-    // Validation
     if (!name || !phone || !perDaySalary) {
       return Response.json(
         { success: false, error: "name, phone aur perDaySalary required hain" },
@@ -39,7 +40,6 @@ export const POST = verifyAdmin(async (req) => {
       );
     }
 
-    // Duplicate phone check
     const existing = await Employee.findOne({ phone: String(phone).trim() });
     if (existing) {
       return Response.json(
@@ -53,7 +53,8 @@ export const POST = verifyAdmin(async (req) => {
     const empId    = generateEmpId(name, phone, count);
     const joinDate = joiningDate || today;
 
-    // Password generate + hash
+    // ✅ FIX: plainPassword generate karo but DB mein save MAT karo
+    // Sirf hash save karo
     const plainPassword  = generatePassword(name, phone);
     const hashedPassword = await bcrypt.hash(plainPassword, await bcrypt.genSalt(10));
 
@@ -69,14 +70,17 @@ export const POST = verifyAdmin(async (req) => {
       salaryHistory: [
         { salary: Number(perDaySalary), from: joinDate, reason: "Joining Salary" },
       ],
-      password:      hashedPassword,
-      plainPassword: plainPassword,
-      attendance:    {},
-      paidDates:     [],
+      password: hashedPassword, // ✅ Sirf hashed password save hoga
+      // ✅ FIX: plainPassword field NAHI save hogi
+      // plainPassword: plainPassword  ← YEH LINE HATA DI
+      attendance:     {},
+      paidDates:      [],
       salaryPayments: [],
-      createdBy: req.admin._id,
+      createdBy:      req.admin?._id || null,
     });
 
+    // ✅ plainPassword sirf is response mein dikhao
+    // Admin ko warn karo ki yeh sirf ek baar dikh raha hai
     return Response.json({
       success: true,
       message: "Employee register ho gaya",
@@ -89,9 +93,9 @@ export const POST = verifyAdmin(async (req) => {
         joiningDate:  employee.joiningDate,
         perDaySalary: employee.perDaySalary,
         isActive:     employee.isActive,
-        // Admin ko ek baar dikhao — share karo employee se
+        // ✅ Sirf ek baar dikhao — yeh DB mein nahi hai ab
         loginPassword: plainPassword,
-        passwordNote:  `Login: phone = ${phone}, password = ${plainPassword}`,
+        passwordNote:  "⚠️ Yeh password sirf ek baar dikh raha hai — abhi note kar lo! Phone: " + phone,
       },
     }, { status: 201 });
 
@@ -105,8 +109,7 @@ export const POST = verifyAdmin(async (req) => {
 });
 
 // ─────────────────────────────────────────────────────────────────
-// GET  /api/employees  —  Sab employees list
-// Query: ?status=active | inactive
+// GET  /api/employees — Sab employees list
 // ─────────────────────────────────────────────────────────────────
 export const GET = verifyAdmin(async (req) => {
   try {
