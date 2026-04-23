@@ -5,12 +5,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-
     "start": "next start",
-
     "start:port": "next start -p ${PORT:-3000}"
   },
   "dependencies": {
+    "@netlify/plugin-nextjs": "^5.15.9",
     "axios": "^1.12.2",
     "bcryptjs": "^3.0.2",
     "chart.js": "^4.5.1",
@@ -20,7 +19,7 @@
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.546.0",
     "mongoose": "^8.19.1",
-    "next": "15.5.5",
+    "next": "^16.2.4",
     "react": "19.1.0",
     "react-chartjs-2": "^5.3.0",
     "react-dom": "19.1.0",
