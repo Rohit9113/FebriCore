@@ -1,10 +1,11 @@
 // src/app/layout.jsx
-// ✅ NEW: ThemeProvider added for dark/light toggle
 
 import "./globals.css";
+import Navbar          from "@/components/Navbar";
+import ConditionalMain from "@/components/ConditionalMain";
 import { AuthProvider }  from "@/context/AuthContext";
-import { ThemeProvider } from "@/context/ThemeContext"; // ✅ NEW
-import ThemeScript       from "@/components/ThemeScript"; // ✅ NEW — flash prevent
+import { ThemeProvider } from "@/context/ThemeContext";
+import ThemeScript       from "@/components/ThemeScript";
 
 export const metadata = {
   title:       "FabriCore",
@@ -15,7 +16,6 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" data-theme="dark" suppressHydrationWarning>
       <head>
-        {/* ✅ NEW: ThemeScript — page load pe theme flash prevent karta hai */}
         <ThemeScript />
 
         <link rel="icon" href="/weldicon.png" />
@@ -34,10 +34,12 @@ export default function RootLayout({ children }) {
         className="antialiased"
         style={{ fontFamily: "'DM Sans', sans-serif" }}
       >
-        {/* ThemeProvider wraps everything — useTheme() kahi bhi kaam karega */}
         <ThemeProvider>
           <AuthProvider>
-            {children}
+            <Navbar />
+            <ConditionalMain>
+              {children}
+            </ConditionalMain>
           </AuthProvider>
         </ThemeProvider>
       </body>
