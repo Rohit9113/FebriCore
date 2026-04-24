@@ -1,13 +1,9 @@
-//app/api/employees/[id]/salary/route.js
-import { connectDB } from "@/lib/db";
-import Employee from "@/app/api/employees/models/Employee";
+// app/api/employees/[id]/salary/route.js
+
+import { connectDB }   from "@/lib/db";
+import Employee        from "@/app/api/employees/models/Employee";
 import { verifyAdmin } from "@/app/api/middleware/auth";
 
-// ─────────────────────────────────────────────
-// PATCH  /api/employees/[id]/salary
-// Update per-day salary (increment / change)
-// Body: { newSalary, effectiveDate, reason? }
-// ─────────────────────────────────────────────
 export const PATCH = verifyAdmin(async (req, context) => {
   try {
     await connectDB();
@@ -16,63 +12,78 @@ export const PATCH = verifyAdmin(async (req, context) => {
     const { newSalary, effectiveDate, reason } = await req.json();
 
     if (!newSalary || !effectiveDate) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "newSalary aur effectiveDate required hain",
-      }), { status: 400 });
+      return Response.json(
+        { success: false, error: "newSalary aur effectiveDate required hain" },
+        { status: 400 }
+      );
     }
 
     if (Number(newSalary) <= 0) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "Salary zero ya negative nahi ho sakti",
-      }), { status: 400 });
+      return Response.json(
+        { success: false, error: "Salary zero ya negative nahi ho sakti" },
+        { status: 400 }
+      );
     }
 
-    const employee = await Employee.findById(id);
-    if (!employee) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "Employee nahi mila",
-      }), { status: 404 });
+    const emp = await Employee.findById(id);
+    if (!emp) {
+      return Response.json(
+        { success: false, error: "Employee nahi mila" },
+        { status: 404 }
+      );
     }
 
-    if (!employee.isActive) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "Inactive employee ki salary update nahi ho sakti",
-      }), { status: 400 });
+    // ── ✅ KEY FIX: Initial salary history preserve karo ───────────
+    // Agar salaryHistory empty hai, matlab pehle koi increment nahi hua
+    // Toh CURRENT perDaySalary ko joiningDate se add karo — yeh hai original salary
+    if (emp.salaryHistory.length === 0) {
+      emp.salaryHistory.push({
+        salary: emp.perDaySalary,              // original salary (e.g. 300)
+        from:   emp.joiningDate,               // from joining date
+        reason: "Initial Salary",
+      });
     }
 
-    const oldSalary = employee.perDaySalary;
-
-    // Push to salary history
-    employee.salaryHistory.push({
-      salary: Number(newSalary),
-      from: effectiveDate,
-      reason: reason || "Salary Update",
-    });
-
-    employee.perDaySalary = Number(newSalary);
-
-    await employee.save();
-
-    return new Response(JSON.stringify({
-      success: true,
-      message: `Salary ₹${oldSalary} se ₹${newSalary} ho gaya`,
-      data: {
-        oldSalary,
-        newSalary: Number(newSalary),
-        effectiveDate,
+    // ── Duplicate check — same date pe already entry hai? ──────────
+    const existingIdx = emp.salaryHistory.findIndex(h => h.from === effectiveDate);
+    if (existingIdx !== -1) {
+      // Same date pe update karo
+      emp.salaryHistory[existingIdx].salary = Number(newSalary);
+      emp.salaryHistory[existingIdx].reason  = reason || "Salary Update";
+    } else {
+      // Naya entry add karo
+      emp.salaryHistory.push({
+        salary: Number(newSalary),
+        from:   effectiveDate,
         reason: reason || "Salary Update",
-        salaryHistory: employee.salaryHistory,
+      });
+    }
+
+    // ── Sort by date — oldest first ────────────────────────────────
+    emp.salaryHistory.sort((a, b) => new Date(a.from) - new Date(b.from));
+    emp.markModified("salaryHistory");
+
+    // ── Current salary update karo ─────────────────────────────────
+    emp.perDaySalary = Number(newSalary);
+
+    await emp.save();
+
+    return Response.json({
+      success: true,
+      message: `${emp.name} ki salary ₹${newSalary}/day ho gayi (from ${effectiveDate})`,
+      data: {
+        _id:          emp._id,
+        name:         emp.name,
+        perDaySalary: emp.perDaySalary,
+        salaryHistory: emp.salaryHistory,
       },
-    }), { status: 200 });
+    }, { status: 200 });
 
   } catch (err) {
-    return new Response(JSON.stringify({
-      success: false,
-      error: err.message,
-    }), { status: 500 });
+    console.error("Salary update error:", err);
+    return Response.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
   }
 });
