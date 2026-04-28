@@ -26,11 +26,6 @@ const getStatus   = (entry) => (typeof entry === "string" ? entry : entry?.statu
 const getMarkedBy = (entry) => (typeof entry === "string" ? "manual" : entry?.markedBy ?? "manual");
 const TODAY = new Date().toISOString().split("T")[0];
 
-// ✅ BUG FIX: Har date ke liye us time ka applicable salary return karo
-// salaryHistory: [{salary:300, from:"2025-10-20"}, {salary:350, from:"2025-12-01"}]
-//
-// Date "2025-11-15" → salary = 300 (Dec 1 se pehle)
-// Date "2025-12-10" → salary = 350 (Dec 1 ke baad)
 const getSalaryForDate = (date, emp) => {
   const history = [...(emp.salaryHistory || [])].sort(
     (a, b) => new Date(a.from) - new Date(b.from)
@@ -38,18 +33,14 @@ const getSalaryForDate = (date, emp) => {
 
   if (history.length === 0) return emp.perDaySalary;
 
-  // Har history entry check karo — last matching one use karo
   let applicable = null;
   for (const entry of history) {
     if (entry.from <= date) {
       applicable = entry.salary;
     } else {
-      break; // sorted hai — aage sab future dates hain
+      break;
     }
   }
-
-  // Agar koi entry match nahi hua (date joining se bhi pehle?)
-  // toh pehli entry ka salary use karo
   return applicable ?? history[0].salary;
 };
 
@@ -69,11 +60,9 @@ const normalizeEmployee = (emp) => {
 
 const normalizeExpense = (exp) => ({ ...exp, id: exp._id || exp.id });
 
-// ✅ BUG FIX: totalEarned ab per-date salary se calculate hota hai
 const getEmpStats = (emp) => {
   const entries = Object.entries(emp.attendance || {});
 
-  // Har present day ke liye us date ka applicable salary use karo
   const totalEarned = entries.reduce((sum, [date, v]) => {
     const status = getStatus(v);
     if (status === "present" || status === "auto-present") {
@@ -88,6 +77,33 @@ const getEmpStats = (emp) => {
   const dueAmount  = Math.max(0, totalEarned - paidAmount);
   return { present, absent, totalEarned, paidAmount, dueAmount, total: entries.length, paidDays: 0, dueDays: 0 };
 };
+
+/* ── Pagination Component ────────────────────────────────────────── */
+function Pagination({ currentPage, totalPages, onPageChange }) {
+  if (totalPages <= 1) return null;
+  const pages = [];
+  for (let i = 1; i <= totalPages; i++) pages.push(i);
+  return (
+    <div className="flex items-center justify-center gap-1.5 pt-4">
+      <button
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
+        className="px-3 py-1.5 text-xs bg-white/5 border border-white/10 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition"
+      >← Prev</button>
+      {pages.map((p) => (
+        <button key={p} onClick={() => onPageChange(p)}
+          className={`w-8 h-8 text-xs rounded-lg font-semibold transition ${currentPage === p ? "bg-amber-400 text-black" : "bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10"}`}>
+          {p}
+        </button>
+      ))}
+      <button
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages}
+        className="px-3 py-1.5 text-xs bg-white/5 border border-white/10 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition"
+      >Next →</button>
+    </div>
+  );
+}
 
 /* ── Toast ───────────────────────────────────────────────────────── */
 function useToast() {
@@ -158,12 +174,6 @@ function SuperAdminPinModal({ onSuccess, onClose }) {
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════
-   ROOT COMPONENT
-   ✅ FIX 1: min-h-screen + bg-[#0f1117] hataya — dashboard ke andar
-   ✅ FIX 2: fetchExpenses/fetchEmployees useCallback deps fixed
-   ✅ FIX 3: autoMarkToday race condition fixed — employees.length check
-══════════════════════════════════════════════════════════════════ */
 export default function AllExpenseSummary() {
   const [activeType,  setActiveType]  = useState("goods");
   const [showAdd,     setShowAdd]     = useState(false);
@@ -176,7 +186,6 @@ export default function AllExpenseSummary() {
   const superAdminTimerRef = useRef(null);
   const { show: toast, ToastContainer } = useToast();
 
-  /* ── Fetch ──────────────────────────────────────────────────── */
   const fetchExpenses = useCallback(async () => {
     setLoading((p) => ({ ...p, expenses: true }));
     try {
@@ -187,7 +196,6 @@ export default function AllExpenseSummary() {
     } finally {
       setLoading((p) => ({ ...p, expenses: false }));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchEmployees = useCallback(async () => {
@@ -200,7 +208,6 @@ export default function AllExpenseSummary() {
     } finally {
       setLoading((p) => ({ ...p, employees: false }));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -208,9 +215,8 @@ export default function AllExpenseSummary() {
     fetchEmployees();
   }, [fetchExpenses, fetchEmployees]);
 
-  /* ── ✅ FIX: autoMarkToday — employees.length > 0 check ─────── */
   const autoMarkToday = useCallback(async () => {
-    if (employees.length === 0) return; // ✅ Race condition fix
+    if (employees.length === 0) return;
     const today      = new Date().toISOString().split("T")[0];
     const activeEmps = employees.filter((e) => e.isActive && !e.attendance?.[today]);
     if (activeEmps.length === 0) return;
@@ -218,7 +224,6 @@ export default function AllExpenseSummary() {
     await fetchEmployees();
   }, [employees, fetchEmployees]);
 
-  // ✅ FIX: employees.length dependency — nahi to empty array pe fire hota
   useEffect(() => {
     if (employees.length === 0) return;
     autoMarkToday();
@@ -231,7 +236,6 @@ export default function AllExpenseSummary() {
       return () => clearInterval(interval);
     }, midnight - now);
     return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employees.length]);
 
   /* ── Super Admin ─────────────────────────────────────────────── */
@@ -243,9 +247,7 @@ export default function AllExpenseSummary() {
   const deactivateSuperAdmin = () => { setIsSuperAdmin(false); clearTimeout(superAdminTimerRef.current); };
   useEffect(() => () => clearTimeout(superAdminTimerRef.current), []);
 
-  /* ── Totals ──────────────────────────────────────────────────── */
   const totalDue = employees.reduce((s, emp) => s + getEmpStats(emp).dueAmount, 0);
-  // ✅ FIX: per-date salary use karo
   const totalSalary = employees.reduce((s, emp) => {
     return s + Object.entries(emp.attendance || {}).reduce((sum, [date, v]) => {
       const st = getStatus(v);
@@ -255,7 +257,6 @@ export default function AllExpenseSummary() {
     }, 0);
   }, 0);
 
-  /* ── Add ─────────────────────────────────────────────────────── */
   const handleAddSave = async (formData) => {
     try {
       if (activeType === "salary") {
@@ -283,8 +284,6 @@ export default function AllExpenseSummary() {
   const updateEmployeeLocal = (updatedEmp) =>
     setEmployees((prev) => prev.map((e) => (e.id === updatedEmp.id ? normalizeEmployee(updatedEmp) : e)));
 
-  /* ── Render ──────────────────────────────────────────────────── */
-  // ✅ NO min-h-screen, NO bg — dashboard ke andar render hoga
   return (
     <div style={{ fontFamily: "'Sora','Segoe UI',sans-serif" }} className="text-white p-4 md:p-5 pb-6">
       <ToastContainer />
@@ -410,6 +409,8 @@ function Modal({ onClose, children }) {
 }
 
 /* ── Expense Section ─────────────────────────────────────────────── */
+const EXPENSES_PER_PAGE = 15;
+
 function ExpenseSection({ expenses, setExpenses, toast, loading, isSuperAdmin }) {
   const [catFilter,   setCatFilter]   = useState("All");
   const [monthFilter, setMonthFilter] = useState("");
@@ -419,6 +420,7 @@ function ExpenseSection({ expenses, setExpenses, toast, loading, isSuperAdmin })
   const [savingEdit,  setSavingEdit]  = useState(false);
   const [deleteId,    setDeleteId]    = useState(null);
   const [deleting,    setDeleting]    = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const goodsOnly  = expenses.filter((e) => !e.type || e.type === "goods");
   const categories = ["All", ...Array.from(new Set(goodsOnly.map((e) => e.category))).sort()];
@@ -426,6 +428,12 @@ function ExpenseSection({ expenses, setExpenses, toast, loading, isSuperAdmin })
     .filter((e) => catFilter === "All" || e.category === catFilter)
     .filter((e) => monthFilter ? e.date?.startsWith(monthFilter) : true)
     .sort((a, b) => sortOrder === "desc" ? new Date(b.date) - new Date(a.date) : new Date(a.date) - new Date(b.date));
+
+  const totalPages  = Math.ceil(filtered.length / EXPENSES_PER_PAGE);
+  const paginated   = filtered.slice((currentPage - 1) * EXPENSES_PER_PAGE, currentPage * EXPENSES_PER_PAGE);
+
+  // Reset to page 1 when filters change
+  useEffect(() => { setCurrentPage(1); }, [catFilter, monthFilter, sortOrder]);
 
   const filteredTotal = filtered.reduce((s, e) => s + e.amount, 0);
   const overallTotal  = goodsOnly.reduce((s, e) => s + e.amount, 0);
@@ -515,78 +523,87 @@ function ExpenseSection({ expenses, setExpenses, toast, loading, isSuperAdmin })
         ) : filtered.length === 0 ? (
           <div className="p-10 text-center text-gray-500">Koi expense nahi mila.</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className={`text-gray-400 text-xs text-left uppercase tracking-wide ${isSuperAdmin ? "bg-red-500/5" : "bg-white/5"}`}>
-                  <th className="px-5 py-3">Date</th><th className="px-5 py-3">Category</th>
-                  <th className="px-5 py-3">Item / Description</th><th className="px-5 py-3 text-center">Qty</th>
-                  <th className="px-5 py-3 text-right">Rate</th><th className="px-5 py-3 text-right">Amount</th>
-                  {isSuperAdmin && <th className="px-5 py-3 text-center">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((e, i) => {
-                  const isEditing = editingId === e.id;
-                  const autoAmt   = editForm.qty && editForm.rate ? Number(editForm.qty) * Number(editForm.rate) : null;
-                  return isEditing ? (
-                    <tr key={e.id} className="border-t border-red-500/20 bg-red-500/5">
-                      <td className="px-3 py-2"><input type="date" value={editForm.date} onChange={(ev) => setEditForm(p=>({...p,date:ev.target.value}))} className="bg-white/5 border border-white/15 rounded-lg px-2 py-1 text-white text-xs w-full focus:outline-none focus:ring-1 focus:ring-red-400" /></td>
-                      <td className="px-3 py-2">
-                        <select value={editForm.category} onChange={(ev) => setEditForm(p=>({...p,category:ev.target.value}))} className="bg-[#1a1d27] border border-white/15 rounded-lg px-2 py-1 text-white text-xs w-full focus:outline-none">
-                          {EXPENSE_CATEGORIES.map(c=><option key={c} value={c} className="bg-[#1a1d27]">{c}</option>)}
-                        </select>
-                      </td>
-                      <td className="px-3 py-2"><input value={editForm.desc} onChange={(ev) => setEditForm(p=>({...p,desc:ev.target.value}))} className="bg-white/5 border border-white/15 rounded-lg px-2 py-1 text-white text-xs w-full focus:outline-none" /></td>
-                      <td className="px-3 py-2">
-                        <div className="flex gap-1">
-                          {/* ✅ FIX: type="text" inputMode="decimal" */}
-                          <input type="text" inputMode="decimal" value={editForm.qty} placeholder="Qty" onChange={(ev) => setEditForm(p=>({...p,qty:ev.target.value}))} className="bg-white/5 border border-white/15 rounded-lg px-2 py-1 text-white text-xs w-14 focus:outline-none focus:ring-1 focus:ring-red-400" />
-                          <select value={editForm.unit} onChange={(ev) => setEditForm(p=>({...p,unit:ev.target.value}))} className="bg-[#1a1d27] border border-white/15 rounded-lg px-1 py-1 text-white text-xs focus:outline-none">
-                            {["pcs","kg","ltr","box","set","pair","mtr","rft","bag"].map(u=><option key={u} value={u} className="bg-[#1a1d27]">{u}</option>)}
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className={`text-gray-400 text-xs text-left uppercase tracking-wide ${isSuperAdmin ? "bg-red-500/5" : "bg-white/5"}`}>
+                    <th className="px-5 py-3">Date</th><th className="px-5 py-3">Category</th>
+                    <th className="px-5 py-3">Item / Description</th><th className="px-5 py-3 text-center">Qty</th>
+                    <th className="px-5 py-3 text-right">Rate</th><th className="px-5 py-3 text-right">Amount</th>
+                    {isSuperAdmin && <th className="px-5 py-3 text-center">Actions</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginated.map((e, i) => {
+                    const isEditing = editingId === e.id;
+                    const autoAmt   = editForm.qty && editForm.rate ? Number(editForm.qty) * Number(editForm.rate) : null;
+                    return isEditing ? (
+                      <tr key={e.id} className="border-t border-red-500/20 bg-red-500/5">
+                        <td className="px-3 py-2"><input type="date" value={editForm.date} onChange={(ev) => setEditForm(p=>({...p,date:ev.target.value}))} className="bg-white/5 border border-white/15 rounded-lg px-2 py-1 text-white text-xs w-full focus:outline-none focus:ring-1 focus:ring-red-400" /></td>
+                        <td className="px-3 py-2">
+                          <select value={editForm.category} onChange={(ev) => setEditForm(p=>({...p,category:ev.target.value}))} className="bg-[#1a1d27] border border-white/15 rounded-lg px-2 py-1 text-white text-xs w-full focus:outline-none">
+                            {EXPENSE_CATEGORIES.map(c=><option key={c} value={c} className="bg-[#1a1d27]">{c}</option>)}
                           </select>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2">
-                        {/* ✅ FIX: type="text" inputMode="decimal" */}
-                        <input type="text" inputMode="decimal" value={editForm.rate} placeholder="Rate" onChange={(ev) => setEditForm(p=>({...p,rate:ev.target.value}))} className="bg-white/5 border border-white/15 rounded-lg px-2 py-1 text-white text-xs w-20 focus:outline-none focus:ring-1 focus:ring-red-400" />
-                      </td>
-                      <td className="px-3 py-2">
-                        {autoAmt ? (
-                          <span className="text-green-400 font-bold text-sm">₹{autoAmt.toLocaleString()}</span>
-                        ) : (
-                          <input type="text" inputMode="decimal" value={editForm.amount} onChange={(ev) => setEditForm(p=>({...p,amount:ev.target.value}))} className="bg-white/5 border border-white/15 rounded-lg px-2 py-1 text-white text-xs w-24 focus:outline-none focus:ring-1 focus:ring-red-400" />
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex gap-1 justify-center">
-                          <button onClick={saveEdit} disabled={savingEdit} className="text-xs px-2.5 py-1.5 bg-green-500 hover:bg-green-400 text-white rounded-lg font-semibold transition disabled:opacity-50">{savingEdit?"...":"✓ Save"}</button>
-                          <button onClick={() => setEditingId(null)} className="text-xs px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-gray-300 rounded-lg transition">✕</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    <tr key={e.id} className={`border-t border-white/5 transition-colors ${isSuperAdmin?"hover:bg-red-500/[0.03]":"hover:bg-white/[0.04]"} ${i%2!==0?"bg-white/[0.015]":""}`}>
-                      <td className="px-5 py-3 text-gray-400 text-sm whitespace-nowrap">{fmtDate(e.date)}</td>
-                      <td className="px-5 py-3"><span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border ${catColor(e.category)}`}>{e.category}</span></td>
-                      <td className="px-5 py-3 text-white text-sm">{e.desc}</td>
-                      <td className="px-5 py-3 text-gray-300 text-sm text-center">{e.qty?`${e.qty} ${e.unit||""}`:"—"}</td>
-                      <td className="px-5 py-3 text-gray-400 text-sm text-right">{e.rate?`₹${e.rate}`:"—"}</td>
-                      <td className="px-5 py-3 text-right font-semibold text-green-400 whitespace-nowrap">₹ {e.amount.toLocaleString()}</td>
-                      {isSuperAdmin && (
-                        <td className="px-5 py-3 text-center">
-                          <div className="flex gap-1.5 justify-center">
-                            <button onClick={() => startEdit(e)} className="text-xs px-2.5 py-1 bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 border border-blue-500/25 rounded-lg transition font-medium">✏️ Edit</button>
-                            <button onClick={() => setDeleteId(e.id)} className="text-xs px-2.5 py-1 bg-red-500/20 hover:bg-red-500/40 text-red-300 border border-red-500/25 rounded-lg transition font-medium">🗑️ Del</button>
+                        </td>
+                        <td className="px-3 py-2"><input value={editForm.desc} onChange={(ev) => setEditForm(p=>({...p,desc:ev.target.value}))} className="bg-white/5 border border-white/15 rounded-lg px-2 py-1 text-white text-xs w-full focus:outline-none" /></td>
+                        <td className="px-3 py-2">
+                          <div className="flex gap-1">
+                            <input type="text" inputMode="decimal" value={editForm.qty} placeholder="Qty" onChange={(ev) => setEditForm(p=>({...p,qty:ev.target.value}))} className="bg-white/5 border border-white/15 rounded-lg px-2 py-1 text-white text-xs w-14 focus:outline-none focus:ring-1 focus:ring-red-400" />
+                            <select value={editForm.unit} onChange={(ev) => setEditForm(p=>({...p,unit:ev.target.value}))} className="bg-[#1a1d27] border border-white/15 rounded-lg px-1 py-1 text-white text-xs focus:outline-none">
+                              {["pcs","kg","ltr","box","set","pair","mtr","rft","bag"].map(u=><option key={u} value={u} className="bg-[#1a1d27]">{u}</option>)}
+                            </select>
                           </div>
                         </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        <td className="px-3 py-2">
+                          <input type="text" inputMode="decimal" value={editForm.rate} placeholder="Rate" onChange={(ev) => setEditForm(p=>({...p,rate:ev.target.value}))} className="bg-white/5 border border-white/15 rounded-lg px-2 py-1 text-white text-xs w-20 focus:outline-none focus:ring-1 focus:ring-red-400" />
+                        </td>
+                        <td className="px-3 py-2">
+                          {autoAmt ? (
+                            <span className="text-green-400 font-bold text-sm">₹{autoAmt.toLocaleString()}</span>
+                          ) : (
+                            <input type="text" inputMode="decimal" value={editForm.amount} onChange={(ev) => setEditForm(p=>({...p,amount:ev.target.value}))} className="bg-white/5 border border-white/15 rounded-lg px-2 py-1 text-white text-xs w-24 focus:outline-none focus:ring-1 focus:ring-red-400" />
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex gap-1 justify-center">
+                            <button onClick={saveEdit} disabled={savingEdit} className="text-xs px-2.5 py-1.5 bg-green-500 hover:bg-green-400 text-white rounded-lg font-semibold transition disabled:opacity-50">{savingEdit?"...":"✓ Save"}</button>
+                            <button onClick={() => setEditingId(null)} className="text-xs px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-gray-300 rounded-lg transition">✕</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={e.id} className={`border-t border-white/5 transition-colors ${isSuperAdmin?"hover:bg-red-500/[0.03]":"hover:bg-white/[0.04]"} ${i%2!==0?"bg-white/[0.015]":""}`}>
+                        <td className="px-5 py-3 text-gray-400 text-sm whitespace-nowrap">{fmtDate(e.date)}</td>
+                        <td className="px-5 py-3"><span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border ${catColor(e.category)}`}>{e.category}</span></td>
+                        <td className="px-5 py-3 text-white text-sm">{e.desc}</td>
+                        <td className="px-5 py-3 text-gray-300 text-sm text-center">{e.qty?`${e.qty} ${e.unit||""}`:"—"}</td>
+                        <td className="px-5 py-3 text-gray-400 text-sm text-right">{e.rate?`₹${e.rate}`:"—"}</td>
+                        <td className="px-5 py-3 text-right font-semibold text-green-400 whitespace-nowrap">₹ {e.amount.toLocaleString()}</td>
+                        {isSuperAdmin && (
+                          <td className="px-5 py-3 text-center">
+                            <div className="flex gap-1.5 justify-center">
+                              <button onClick={() => startEdit(e)} className="text-xs px-2.5 py-1 bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 border border-blue-500/25 rounded-lg transition font-medium">✏️ Edit</button>
+                              <button onClick={() => setDeleteId(e.id)} className="text-xs px-2.5 py-1 bg-red-500/20 hover:bg-red-500/40 text-red-300 border border-red-500/25 rounded-lg transition font-medium">🗑️ Del</button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {/* Expense Pagination */}
+            <div className="px-5 pb-4">
+              <div className="flex items-center justify-between pt-3 border-t border-white/5">
+                <p className="text-xs text-gray-500">
+                  Showing {Math.min((currentPage-1)*EXPENSES_PER_PAGE+1, filtered.length)}–{Math.min(currentPage*EXPENSES_PER_PAGE, filtered.length)} of {filtered.length}
+                </p>
+                <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+              </div>
+            </div>
+          </>
         )}
       </div>
 
@@ -623,6 +640,8 @@ function ExpenseSection({ expenses, setExpenses, toast, loading, isSuperAdmin })
 }
 
 /* ── Salary Section ──────────────────────────────────────────────── */
+const EMPLOYEES_PER_PAGE = 6;
+
 function SalarySection({ employees, setEmployees, totalSalary, totalDue, onViewProfile, isSuperAdmin, toast, fetchEmployees, loading }) {
   const [selectedId, setSelectedId]       = useState(null);
   const [filterMonth, setFilterMonth]     = useState("");
@@ -630,16 +649,22 @@ function SalarySection({ employees, setEmployees, totalSalary, totalDue, onViewP
   const [empFilter, setEmpFilter]         = useState("active");
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
+  const [currentPage, setCurrentPage]     = useState(1);
 
   const activeEmps   = employees.filter((e) => e.isActive);
   const inactiveEmps = employees.filter((e) => !e.isActive);
   const shownEmps    = empFilter === "active" ? activeEmps : inactiveEmps;
+
+  const totalPages   = Math.ceil(shownEmps.length / EMPLOYEES_PER_PAGE);
+  const paginatedEmps = shownEmps.slice((currentPage - 1) * EMPLOYEES_PER_PAGE, currentPage * EMPLOYEES_PER_PAGE);
+
   const employee     = employees.find((e) => e.id === selectedId);
 
   useEffect(() => { if (!selectedId && shownEmps.length > 0) setSelectedId(shownEmps[0].id); }, [shownEmps, selectedId]);
 
   const handleFilterChange = (val) => {
     setEmpFilter(val);
+    setCurrentPage(1);
     const list = val === "active" ? activeEmps : inactiveEmps;
     setSelectedId(list[0]?.id || null);
   };
@@ -673,7 +698,6 @@ function SalarySection({ employees, setEmployees, totalSalary, totalDue, onViewP
 
   const getFiltered = (emp) => Object.entries(emp.attendance || {}).filter(([date]) => filterMonth ? date.startsWith(filterMonth) : true).sort(([a],[b]) => new Date(b)-new Date(a));
 
-  // ✅ FIX: per-date salary use karo
   const activeSalary = activeEmps.reduce((s, emp) => {
     return s + Object.entries(emp.attendance || {}).reduce((sum, [date, v]) => {
       const st = getStatus(v);
@@ -727,67 +751,77 @@ function SalarySection({ employees, setEmployees, totalSalary, totalDue, onViewP
           {empFilter==="inactive"?"Koi inactive employee nahi hai.":"Koi active employee nahi hai."}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {shownEmps.map((emp) => {
-            const stats       = getEmpStats(emp);
-            const isInactive  = !emp.isActive;
-            const isProcessing = actionLoading === emp.id;
-            return (
-              <motion.div key={emp.id} whileHover={{ scale:1.02 }} onClick={()=>setSelectedId(emp.id)}
-                className={`cursor-pointer rounded-2xl p-5 border transition-all relative overflow-hidden ${isInactive?"opacity-70 border-dashed":""} ${selectedId===emp.id?"bg-amber-400/10 border-amber-400/50 shadow-lg shadow-amber-400/10":isInactive?"bg-[#1a1d27] border-gray-600":"bg-[#1a1d27] border-white/10 hover:border-white/20"}`}>
-                {isInactive && <div className="absolute top-3 right-3 text-[10px] bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full font-semibold uppercase tracking-wide">Inactive</div>}
-                <div className="flex justify-between items-start mb-1 pr-16">
-                  <div>
-                    <p className={`font-semibold text-base ${isInactive?"text-gray-400":"text-white"}`}>{emp.name}</p>
-                    <p className="text-xs text-amber-400 font-mono mt-0.5">{emp.empId}</p>
-                  </div>
-                  <button onClick={(e)=>{e.stopPropagation();onViewProfile(emp.id);}} className="absolute top-5 right-14 text-xs bg-white/10 hover:bg-white/20 px-2 py-1 rounded-lg text-gray-300 transition">Profile</button>
-                </div>
-                <p className="text-xs text-gray-500 mb-3">📞 {emp.phone}</p>
-                {isInactive && emp.deactivatedOn && <p className="text-xs text-red-400/70 mb-2">Deactivated: {fmtDate(emp.deactivatedOn)}</p>}
-                <div className="flex justify-between items-center mb-3">
-                  <span className="text-xs text-gray-400">₹ {emp.perDaySalary}/day</span>
-                  <span className="text-xs bg-white/10 px-2 py-1 rounded-full text-gray-300">{stats.total} days tracked</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-center mb-2">
-                  <div className="bg-green-500/10 rounded-xl py-2"><p className="text-green-400 font-bold text-lg">{stats.present}</p><p className="text-[10px] text-gray-400">Present Days</p></div>
-                  <div className="bg-red-500/10 rounded-xl py-2"><p className="text-red-400 font-bold text-lg">{stats.absent}</p><p className="text-[10px] text-gray-400">Absent Days</p></div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-center mb-3">
-                  <div className="bg-blue-500/10 rounded-xl py-2"><p className="text-blue-400 font-bold text-sm">₹{stats.paidAmount.toLocaleString()}</p><p className="text-[10px] text-gray-400">Paid ✓</p></div>
-                  <div className={`rounded-xl py-2 ${stats.dueAmount>0?"bg-orange-500/15 border border-orange-500/30":"bg-white/5"}`}>
-                    <p className={`font-bold text-sm ${stats.dueAmount>0?"text-orange-400":"text-gray-500"}`}>₹{stats.dueAmount.toLocaleString()}</p>
-                    <p className="text-[10px] text-gray-400">Due ⏳</p>
-                  </div>
-                </div>
-                {!isInactive ? (
-                  <div className="mt-3 space-y-2">
-                    {(() => {
-                      const todayEntry = emp.attendance?.[TODAY];
-                      const todayStatus = todayEntry ? getStatus(todayEntry) : null;
-                      const todayBy    = todayEntry ? getMarkedBy(todayEntry) : null;
-                      if (todayEntry) return (
-                        <div className={`text-xs rounded-lg px-3 py-1.5 flex items-center justify-between ${todayStatus==="absent"?"bg-red-500/10 text-red-300":todayBy==="auto"?"bg-blue-500/10 text-blue-300":"bg-green-500/10 text-green-300"}`}>
-                          <span>Aaj: {todayStatus==="auto-present"?"⚡ Auto-Present":todayStatus==="present"?"✓ Present":"✗ Absent"}</span>
-                        </div>
-                      );
-                      return <div className="text-xs rounded-lg px-3 py-1.5 bg-gray-700/30 text-gray-400 text-center">Aaj ka attendance pending</div>;
-                    })()}
-                    <div className="flex gap-2">
-                      <button onClick={(e)=>{e.stopPropagation();markToday(emp.id,"present");}} disabled={isProcessing} className="flex-1 text-xs py-1.5 bg-green-500/20 hover:bg-green-500/40 text-green-300 rounded-lg transition disabled:opacity-50">✓ Present Today</button>
-                      <button onClick={(e)=>{e.stopPropagation();markToday(emp.id,"absent");}} disabled={isProcessing} className="flex-1 text-xs py-1.5 bg-red-500/20 hover:bg-red-500/40 text-red-300 rounded-lg transition disabled:opacity-50">✗ Absent Today</button>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {paginatedEmps.map((emp) => {
+              const stats       = getEmpStats(emp);
+              const isInactive  = !emp.isActive;
+              const isProcessing = actionLoading === emp.id;
+              return (
+                <motion.div key={emp.id} whileHover={{ scale:1.02 }} onClick={()=>setSelectedId(emp.id)}
+                  className={`cursor-pointer rounded-2xl p-5 border transition-all relative overflow-hidden ${isInactive?"opacity-70 border-dashed":""} ${selectedId===emp.id?"bg-amber-400/10 border-amber-400/50 shadow-lg shadow-amber-400/10":isInactive?"bg-[#1a1d27] border-gray-600":"bg-[#1a1d27] border-white/10 hover:border-white/20"}`}>
+                  {isInactive && <div className="absolute top-3 right-3 text-[10px] bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full font-semibold uppercase tracking-wide">Inactive</div>}
+                  <div className="flex justify-between items-start mb-1 pr-16">
+                    <div>
+                      <p className={`font-semibold text-base ${isInactive?"text-gray-400":"text-white"}`}>{emp.name}</p>
+                      <p className="text-xs text-amber-400 font-mono mt-0.5">{emp.empId}</p>
                     </div>
-                    <button onClick={(e)=>{e.stopPropagation();setDeleteConfirmId(emp.id);}} className="w-full text-xs py-1.5 bg-red-900/30 hover:bg-red-900/60 text-red-400 rounded-lg transition border border-red-900/50">🚫 Deactivate Employee</button>
+                    <button onClick={(e)=>{e.stopPropagation();onViewProfile(emp.id);}} className="absolute top-5 right-14 text-xs bg-white/10 hover:bg-white/20 px-2 py-1 rounded-lg text-gray-300 transition">Profile</button>
                   </div>
-                ) : (
-                  <button onClick={(e)=>{e.stopPropagation();toggleActive(emp.id);}} disabled={isProcessing} className="mt-4 w-full text-xs py-2 bg-green-500/20 hover:bg-green-500/40 text-green-300 rounded-lg transition font-semibold disabled:opacity-50">
-                    {isProcessing?"Processing...":"✓ Reactivate Employee"}
-                  </button>
-                )}
-              </motion.div>
-            );
-          })}
-        </div>
+                  <p className="text-xs text-gray-500 mb-3">📞 {emp.phone}</p>
+                  {isInactive && emp.deactivatedOn && <p className="text-xs text-red-400/70 mb-2">Deactivated: {fmtDate(emp.deactivatedOn)}</p>}
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-xs text-gray-400">₹ {emp.perDaySalary}/day</span>
+                    <span className="text-xs bg-white/10 px-2 py-1 rounded-full text-gray-300">{stats.total} days tracked</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-center mb-2">
+                    <div className="bg-green-500/10 rounded-xl py-2"><p className="text-green-400 font-bold text-lg">{stats.present}</p><p className="text-[10px] text-gray-400">Present Days</p></div>
+                    <div className="bg-red-500/10 rounded-xl py-2"><p className="text-red-400 font-bold text-lg">{stats.absent}</p><p className="text-[10px] text-gray-400">Absent Days</p></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-center mb-3">
+                    <div className="bg-blue-500/10 rounded-xl py-2"><p className="text-blue-400 font-bold text-sm">₹{stats.paidAmount.toLocaleString()}</p><p className="text-[10px] text-gray-400">Paid ✓</p></div>
+                    <div className={`rounded-xl py-2 ${stats.dueAmount>0?"bg-orange-500/15 border border-orange-500/30":"bg-white/5"}`}>
+                      <p className={`font-bold text-sm ${stats.dueAmount>0?"text-orange-400":"text-gray-500"}`}>₹{stats.dueAmount.toLocaleString()}</p>
+                      <p className="text-[10px] text-gray-400">Due ⏳</p>
+                    </div>
+                  </div>
+                  {!isInactive ? (
+                    <div className="mt-3 space-y-2">
+                      {(() => {
+                        const todayEntry = emp.attendance?.[TODAY];
+                        const todayStatus = todayEntry ? getStatus(todayEntry) : null;
+                        const todayBy    = todayEntry ? getMarkedBy(todayEntry) : null;
+                        if (todayEntry) return (
+                          <div className={`text-xs rounded-lg px-3 py-1.5 flex items-center justify-between ${todayStatus==="absent"?"bg-red-500/10 text-red-300":todayBy==="auto"?"bg-blue-500/10 text-blue-300":"bg-green-500/10 text-green-300"}`}>
+                            <span>Aaj: {todayStatus==="auto-present"?"⚡ Auto-Present":todayStatus==="present"?"✓ Present":"✗ Absent"}</span>
+                          </div>
+                        );
+                        return <div className="text-xs rounded-lg px-3 py-1.5 bg-gray-700/30 text-gray-400 text-center">Aaj ka attendance pending</div>;
+                      })()}
+                      <div className="flex gap-2">
+                        <button onClick={(e)=>{e.stopPropagation();markToday(emp.id,"present");}} disabled={isProcessing} className="flex-1 text-xs py-1.5 bg-green-500/20 hover:bg-green-500/40 text-green-300 rounded-lg transition disabled:opacity-50">✓ Present Today</button>
+                        <button onClick={(e)=>{e.stopPropagation();markToday(emp.id,"absent");}} disabled={isProcessing} className="flex-1 text-xs py-1.5 bg-red-500/20 hover:bg-red-500/40 text-red-300 rounded-lg transition disabled:opacity-50">✗ Absent Today</button>
+                      </div>
+                      <button onClick={(e)=>{e.stopPropagation();setDeleteConfirmId(emp.id);}} className="w-full text-xs py-1.5 bg-red-900/30 hover:bg-red-900/60 text-red-400 rounded-lg transition border border-red-900/50">🚫 Deactivate Employee</button>
+                    </div>
+                  ) : (
+                    <button onClick={(e)=>{e.stopPropagation();toggleActive(emp.id);}} disabled={isProcessing} className="mt-4 w-full text-xs py-2 bg-green-500/20 hover:bg-green-500/40 text-green-300 rounded-lg transition font-semibold disabled:opacity-50">
+                      {isProcessing?"Processing...":"✓ Reactivate Employee"}
+                    </button>
+                  )}
+                </motion.div>
+              );
+            })}
+          </div>
+
+          {/* Employee Pagination */}
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-500">
+              Showing {Math.min((currentPage-1)*EMPLOYEES_PER_PAGE+1, shownEmps.length)}–{Math.min(currentPage*EMPLOYEES_PER_PAGE, shownEmps.length)} of {shownEmps.length} employees
+            </p>
+            <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+          </div>
+        </>
       )}
 
       {/* Deactivate Confirm */}
@@ -1004,7 +1038,7 @@ function SalaryDetailSummary({ employee, filterMonth, onUpdate, toast }) {
   const presentDays = allEntries.filter(([,v])=>{const s=getStatus(v);return s==="present"||s==="auto-present";}).map(([date])=>date).sort((a,b)=>new Date(b)-new Date(a));
   const absentDays  = allEntries.filter(([,v])=>getStatus(v)==="absent").map(([date])=>date).sort((a,b)=>new Date(b)-new Date(a));
 
-  const totalEarned  = presentDays.length * employee.perDaySalary;
+  const totalEarned  = presentDays.reduce((sum, date) => sum + getSalaryForDate(date, employee), 0);
   const totalPaid    = (employee.salaryPayments || []).reduce((s,p)=>s+(p.amount||0),0);
   const totalDue     = Math.max(0, totalEarned - totalPaid);
   const payAmountNum = Number(payAmount) || 0;
@@ -1030,7 +1064,7 @@ function SalaryDetailSummary({ employee, filterMonth, onUpdate, toast }) {
         <div className="bg-green-500/10 border border-green-500/20 rounded-2xl p-4 text-center">
           <p className="text-[11px] text-gray-400 mb-1">💼 Total Earned</p>
           <p className="text-2xl font-black text-green-400">₹ {totalEarned.toLocaleString()}</p>
-          <p className="text-[11px] text-gray-500 mt-1">{presentDays.length} din × ₹{employee.perDaySalary}</p>
+          <p className="text-[11px] text-gray-500 mt-1">{presentDays.length} din kaam kiya</p>
         </div>
         <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 text-center">
           <p className="text-[11px] text-gray-400 mb-1">✅ Total Paid</p>
@@ -1086,7 +1120,7 @@ function SalaryDetailSummary({ employee, filterMonth, onUpdate, toast }) {
               {presentDays.map((date)=>(
                 <div key={date} className="flex justify-between items-center bg-green-500/8 border border-green-500/15 rounded-lg px-3 py-2">
                   <div className="flex items-center gap-2"><span className="text-green-400 text-xs">✓</span><span className="text-sm text-gray-200">{fmtDate(date)}</span><span className="text-xs text-gray-500">{new Date(date).toLocaleDateString("en-IN",{weekday:"short"})}</span></div>
-                  <span className="text-green-400 text-xs font-semibold">₹{employee.perDaySalary}</span>
+                  <span className="text-green-400 text-xs font-semibold">₹{getSalaryForDate(date, employee).toLocaleString()}</span>
                 </div>
               ))}
             </div>
@@ -1146,7 +1180,6 @@ function SalaryDetailSummary({ employee, filterMonth, onUpdate, toast }) {
                   <label className="block text-sm font-medium mb-1 text-gray-300">Amount (₹)</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400 font-bold">₹</span>
-                    {/* ✅ FIX: type="text" inputMode="decimal" */}
                     <input type="text" inputMode="decimal" value={payAmount} onChange={(e)=>setPayAmount(e.target.value)}
                       placeholder={`Max: ${totalDue}`}
                       className="w-full bg-white/5 border border-white/10 rounded-lg pl-7 pr-3 py-2.5 text-white text-lg font-bold placeholder-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-400" autoFocus />
@@ -1343,7 +1376,6 @@ function EmployeeDetailDrawer({ employee, onClose, onUpdate, onToggleActive, toa
                   <motion.div initial={{opacity:0,height:0}} animate={{opacity:1,height:"auto"}} exit={{opacity:0,height:0}} className="overflow-hidden">
                     <div className="bg-[#1a1d27] border border-white/10 rounded-2xl p-4 space-y-3">
                       <p className="text-sm font-semibold text-white">Update Salary</p>
-                      {/* ✅ FIX: type="text" inputMode="decimal" */}
                       <Input label="New Per Day Salary (₹)" type="text" inputMode="decimal" placeholder={`Current: ₹${employee.perDaySalary}`} value={incForm.newSalary} onChange={(e)=>setIncForm(p=>({...p,newSalary:e.target.value}))} />
                       <Input label="Effective Date" type="date" value={incForm.effectiveDate} onChange={(e)=>setIncForm(p=>({...p,effectiveDate:e.target.value}))} />
                       <Input label="Reason (optional)" placeholder="e.g. Annual Increment" value={incForm.reason} onChange={(e)=>setIncForm(p=>({...p,reason:e.target.value}))} />
@@ -1428,7 +1460,6 @@ function AddExpenseForm({ type, onClose, onSave, employeeCount }) {
           </div>
           <Input label="Item Name / Description *" placeholder="e.g. Welding Rod, Diesel..." value={form.desc||""} onChange={(e)=>set("desc",e.target.value)} />
           <div className="grid grid-cols-3 gap-3">
-            {/* ✅ FIX: type="text" inputMode="decimal" */}
             <Input label="Quantity" type="text" inputMode="decimal" placeholder="e.g. 5" value={form.qty||""} onChange={(e)=>set("qty",e.target.value)} />
             <div className="flex-1 min-w-0">
               <label className="block text-sm font-medium mb-1 text-gray-300">Unit</label>
@@ -1456,7 +1487,6 @@ function AddExpenseForm({ type, onClose, onSave, employeeCount }) {
           </div>
           <Input label="Address" placeholder="Ghar ka pata" onChange={(e)=>set("address",e.target.value)} />
           <div className="grid grid-cols-2 gap-3">
-            {/* ✅ FIX: type="text" inputMode="decimal" */}
             <Input label="Per Day Salary (₹) *" type="text" inputMode="decimal" placeholder="e.g. 600" onChange={(e)=>set("perDaySalary",e.target.value)} />
             <Input label="Joining Date" type="date" onChange={(e)=>set("joiningDate",e.target.value)} />
           </div>

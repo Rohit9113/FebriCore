@@ -1,4 +1,23 @@
 // app/api/employees/[id]/salary/route.js
+//
+// ✅ BUG FIX: Salary history correctly maintained
+//
+// Problem pehle:
+//   Employee joining: perDaySalary=300, salaryHistory=[]
+//   Salary increase:  perDaySalary=350, salaryHistory=[{salary:350, from:"2025-12-01"}]
+//
+//   Calculation:  present_days * perDaySalary (350)
+//   October days bhi 350 se count ho rahe the — WRONG
+//
+// Fix:
+//   Salary increase ke waqt, agar salaryHistory EMPTY hai →
+//   pehle INITIAL salary ka entry add karo (joiningDate se)
+//   PHIR naya salary add karo (effectiveDate se)
+//
+//   History ab:
+//   [{salary:300, from:"2025-10-20"}, {salary:350, from:"2025-12-01"}]
+//
+//   Calculation: har date ke liye us time ka applicable salary use karo
 
 import { connectDB }   from "@/lib/db";
 import Employee        from "@/app/api/employees/models/Employee";

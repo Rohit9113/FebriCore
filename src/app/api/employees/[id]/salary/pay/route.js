@@ -4,17 +4,6 @@ import Employee from "@/app/api/employees/models/Employee";
 import { verifyAdmin } from "@/app/api/middleware/auth";
 
 // ─────────────────────────────────────────────
-// PATCH  /api/employees/[id]/salary/pay
-//
-// Amount-based partial payment support
-// Body: { amount, note? }
-//
-// Rules:
-//   - amount > 0 required
-//   - amount <= totalDueAmount (can't overpay)
-//   - Records in salaryPayments log
-//   - Due = totalEarned - sum(salaryPayments[].amount)
-// ─────────────────────────────────────────────
 export const PATCH = verifyAdmin(async (req, context) => {
   try {
     await connectDB();
