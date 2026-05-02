@@ -1,8 +1,4 @@
 // app/api/employees/models/Employee.js
-//
-// ✅ FIX: plainPassword field DB se hata diya
-// Plain text password kabhi bhi DB mein save nahi hona chahiye
-// Admin ko password sirf ek baar response mein dikhao — store mat karo
 
 import mongoose from "mongoose";
 

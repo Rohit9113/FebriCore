@@ -5,26 +5,6 @@ import { verifyAdmin } from "@/app/api/middleware/auth";
 
 const TODAY = () => new Date().toISOString().split("T")[0];
 
-// ─────────────────────────────────────────────
-// PATCH  /api/employees/[id]/attendance
-//
-// TWO modes:
-//
-// 1. NORMAL MODE — mark today only
-//    Body: { date: "YYYY-MM-DD", status: "present"|"absent" }
-//    Rules:
-//      - date must be today
-//      - past manually-marked days are locked
-//      - auto-marked today can be overridden
-//
-// 2. SUPER ADMIN MODE — override any past date
-//    Body: { date: "YYYY-MM-DD", status: "present"|"absent", superAdmin: true }
-//    Rules:
-//      - requires superAdmin: true in body
-//      - any date (past or today) can be changed
-//      - always marks as markedBy: "manual"
-//
-// ─────────────────────────────────────────────
 export const PATCH = verifyAdmin(async (req, context) => {
   try {
     await connectDB();

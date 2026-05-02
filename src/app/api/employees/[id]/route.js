@@ -1,10 +1,17 @@
 // app/api/employees/[id]/route.js
-// ✅ FIX: Salary calculation — paidDates se nahi, salaryPayments amount se
-// ✅ FIX: dueAmount = totalEarned - sum(salaryPayments[].amount)
 
-import { connectDB }  from "@/lib/db";
-import Employee       from "@/app/api/employees/models/Employee";
+import { connectDB }   from "@/lib/db";
+import Employee        from "@/app/api/employees/models/Employee";
 import { verifyAdmin } from "@/app/api/middleware/auth";
+
+// ─── Helper ───────────────────────────────────────────────────────
+const getSalaryForDate = (date, salaryHistory, perDaySalary) => {
+  if (!salaryHistory || salaryHistory.length === 0) return perDaySalary;
+  const applicable = salaryHistory
+    .filter((h) => h.from <= date)
+    .sort((a, b) => new Date(b.from) - new Date(a.from));
+  return applicable.length > 0 ? applicable[0].salary : perDaySalary;
+};
 
 // ─────────────────────────────────────────────────────────────────
 // GET  /api/employees/[id]
@@ -16,55 +23,48 @@ export const GET = verifyAdmin(async (req, context) => {
 
     const emp = await Employee.findById(id);
     if (!emp) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "Employee nahi mila",
-      }), { status: 404 });
+      return Response.json({ success: false, error: "Employee nahi mila" }, { status: 404 });
     }
 
-    // ✅ FIX: Map → plain object
     const attendanceObj = emp.attendance instanceof Map
       ? Object.fromEntries(emp.attendance)
-      : (emp.attendance
-          ? Object.fromEntries(Object.entries(emp.attendance))
-          : {});
+      : Object.fromEntries(Object.entries(emp.attendance || {}));
 
-    const entries      = Object.values(attendanceObj);
-    const presentCount = entries.filter(
-      (v) => v.status === "present" || v.status === "auto-present"
-    ).length;
-    const absentCount  = entries.filter((v) => v.status === "absent").length;
+    const entries = Object.entries(attendanceObj);
 
-    // ✅ FIX: Amount-based calculation (paidDates wala purana system hataya)
-    const totalEarned = presentCount * emp.perDaySalary;
-    const totalPaid   = (emp.salaryPayments || []).reduce(
-      (s, p) => s + (p.amount || 0), 0
+    const presentEntries = entries.filter(
+      ([, v]) => v.status === "present" || v.status === "auto-present"
     );
-    const dueAmount   = Math.max(0, totalEarned - totalPaid);
+    const absentCount = entries.filter(([, v]) => v.status === "absent").length;
 
-    return new Response(JSON.stringify({
+    // ✅ FIX: per-date salary
+    const totalEarned = presentEntries.reduce(
+      (sum, [date]) => sum + getSalaryForDate(date, emp.salaryHistory, emp.perDaySalary),
+      0
+    );
+
+    const totalPaid = (emp.salaryPayments || []).reduce((s, p) => s + (p.amount || 0), 0);
+    const dueAmount = Math.max(0, totalEarned - totalPaid);
+
+    return Response.json({
       success: true,
       data: {
         ...emp.toObject(),
         attendance: attendanceObj,
         stats: {
-          present:     presentCount,
+          present:     presentEntries.length,
           absent:      absentCount,
-          totalEarned,
-          paidAmount:  totalPaid,
-          dueAmount,
-          // Keep for backward compat
+          totalEarned: Math.round(totalEarned),
+          paidAmount:  Math.round(totalPaid),
+          dueAmount:   Math.round(dueAmount),
           paidDays:    0,
           dueDays:     0,
         },
       },
-    }), { status: 200 });
+    }, { status: 200 });
 
   } catch (err) {
-    return new Response(JSON.stringify({
-      success: false,
-      error: err.message,
-    }), { status: 500 });
+    return Response.json({ success: false, error: err.message }, { status: 500 });
   }
 });
 
@@ -86,49 +86,37 @@ export const PATCH = verifyAdmin(async (req, context) => {
     });
 
     if (Object.keys(updates).length === 0) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "Koi valid update field nahi mila",
-      }), { status: 400 });
+      return Response.json(
+        { success: false, error: "Koi valid update field nahi mila" },
+        { status: 400 }
+      );
     }
 
-    // Phone duplicate check
     if (updates.phone) {
-      const duplicate = await Employee.findOne({
-        phone: updates.phone,
-        _id:   { $ne: id },
-      });
+      const duplicate = await Employee.findOne({ phone: updates.phone, _id: { $ne: id } });
       if (duplicate) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: "Yeh phone number doosre employee ke paas already hai",
-        }), { status: 409 });
+        return Response.json(
+          { success: false, error: "Yeh phone number doosre employee ke paas already hai" },
+          { status: 409 }
+        );
       }
     }
 
     const updated = await Employee.findByIdAndUpdate(
-      id,
-      { $set: updates },
-      { new: true, runValidators: true }
+      id, { $set: updates }, { new: true, runValidators: true }
     );
 
     if (!updated) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "Employee nahi mila",
-      }), { status: 404 });
+      return Response.json({ success: false, error: "Employee nahi mila" }, { status: 404 });
     }
 
-    return new Response(JSON.stringify({
+    return Response.json({
       success: true,
       message: "Employee profile update ho gaya",
       data:    updated,
-    }), { status: 200 });
+    }, { status: 200 });
 
   } catch (err) {
-    return new Response(JSON.stringify({
-      success: false,
-      error: err.message,
-    }), { status: 500 });
+    return Response.json({ success: false, error: err.message }, { status: 500 });
   }
 });

@@ -3,23 +3,6 @@ import { connectDB } from "@/lib/db";
 import Employee from "@/app/api/employees/models/Employee";
 import { verifyAdmin } from "@/app/api/middleware/auth";
 
-// ─────────────────────────────────────────────
-// PATCH  /api/employees/[id]/status
-// Toggle employee active ↔ inactive
-// Body: { action: "deactivate" | "reactivate" }
-//
-// Deactivate:
-//   - isActive = false
-//   - deactivatedOn = today
-//   - attendance lock ho jaata hai (handled on frontend + attendance route)
-//
-// Reactivate:
-//   - isActive = true
-//   - deactivatedOn = null
-//   - auto-attendance dobara shuru ho jaata hai
-//
-// NOTE: Salary & attendance data kabhi delete nahi hota
-// ─────────────────────────────────────────────
 export const PATCH = verifyAdmin(async (req, context) => {
   try {
     await connectDB();

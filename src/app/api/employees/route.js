@@ -1,13 +1,9 @@
 // app/api/employees/route.js
-//
-// ✅ FIX: plainPassword ab DB mein save nahi hoti
-// Sirf ek baar response mein dikhao — phir gone
-// Admin ko bolna chahiye ki yeh password note kar le
 
-import { connectDB }  from "@/lib/db";
-import Employee       from "./models/Employee";
+import { connectDB }   from "@/lib/db";
+import Employee        from "./models/Employee";
 import { verifyAdmin } from "@/app/api/middleware/auth";
-import bcrypt         from "bcryptjs";
+import bcrypt          from "bcryptjs";
 
 // ─── Helpers ─────────────────────────────────────────────────────
 const generateEmpId = (name, phone, count) => {
@@ -21,6 +17,47 @@ const generatePassword = (name, phone) => {
   const namePart  = name.trim().replace(/\s+/g, "").substring(0, 3).toUpperCase();
   const phonePart = String(phone).replace(/\D/g, "").slice(-4);
   return `${namePart}${phonePart}`;
+};
+
+// ✅ FIX: per-date salary helper
+const getSalaryForDate = (date, salaryHistory, perDaySalary) => {
+  if (!salaryHistory || salaryHistory.length === 0) return perDaySalary;
+  const applicable = salaryHistory
+    .filter((h) => h.from <= date)
+    .sort((a, b) => new Date(b.from) - new Date(a.from));
+  return applicable.length > 0 ? applicable[0].salary : perDaySalary;
+};
+
+// ✅ FIX: stats calculation — salary history aware
+const calcStats = (emp) => {
+  const attObj = emp.attendance instanceof Map
+    ? Object.fromEntries(emp.attendance)
+    : Object.fromEntries(Object.entries(emp.attendance || {}));
+
+  const entries = Object.entries(attObj);
+
+  const presentEntries = entries.filter(
+    ([, v]) => v.status === "present" || v.status === "auto-present"
+  );
+  const absentCount = entries.filter(([, v]) => v.status === "absent").length;
+
+  // ✅ Per-date salary — salary history aware
+  const totalEarned = presentEntries.reduce(
+    (sum, [date]) => sum + getSalaryForDate(date, emp.salaryHistory || [], emp.perDaySalary),
+    0
+  );
+
+  const paidAmount = (emp.salaryPayments || []).reduce((s, p) => s + (p.amount || 0), 0);
+  const dueAmount  = Math.max(0, totalEarned - paidAmount);
+
+  return {
+    attObj,
+    present:    presentEntries.length,
+    absent:     absentCount,
+    totalEarned: Math.round(totalEarned),
+    paidAmount:  Math.round(paidAmount),
+    dueAmount:   Math.round(dueAmount),
+  };
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -53,58 +90,50 @@ export const POST = verifyAdmin(async (req) => {
     const empId    = generateEmpId(name, phone, count);
     const joinDate = joiningDate || today;
 
-    // ✅ FIX: plainPassword generate karo but DB mein save MAT karo
-    // Sirf hash save karo
     const plainPassword  = generatePassword(name, phone);
     const hashedPassword = await bcrypt.hash(plainPassword, await bcrypt.genSalt(10));
 
     const employee = await Employee.create({
       empId,
-      name:        name.trim(),
-      phone:       String(phone).trim(),
-      address:     address || "",
-      joiningDate: joinDate,
-      isActive:    true,
+      name:          name.trim(),
+      phone:         String(phone).trim(),
+      address:       address || "",
+      joiningDate:   joinDate,
+      isActive:      true,
       deactivatedOn: null,
       perDaySalary:  Number(perDaySalary),
+      // ✅ Joining salary bhi history mein add karo
+      // Taaki getSalaryForDate joining date se sahi salary return kare
       salaryHistory: [
         { salary: Number(perDaySalary), from: joinDate, reason: "Joining Salary" },
       ],
-      password: hashedPassword, // ✅ Sirf hashed password save hoga
-      // ✅ FIX: plainPassword field NAHI save hogi
-      // plainPassword: plainPassword  ← YEH LINE HATA DI
+      password:       hashedPassword,
       attendance:     {},
       paidDates:      [],
       salaryPayments: [],
       createdBy:      req.admin?._id || null,
     });
 
-    // ✅ plainPassword sirf is response mein dikhao
-    // Admin ko warn karo ki yeh sirf ek baar dikh raha hai
     return Response.json({
       success: true,
       message: "Employee register ho gaya",
       data: {
-        _id:          employee._id,
-        empId:        employee.empId,
-        name:         employee.name,
-        phone:        employee.phone,
-        address:      employee.address,
-        joiningDate:  employee.joiningDate,
-        perDaySalary: employee.perDaySalary,
-        isActive:     employee.isActive,
-        // ✅ Sirf ek baar dikhao — yeh DB mein nahi hai ab
+        _id:           employee._id,
+        empId:         employee.empId,
+        name:          employee.name,
+        phone:         employee.phone,
+        address:       employee.address,
+        joiningDate:   employee.joiningDate,
+        perDaySalary:  employee.perDaySalary,
+        isActive:      employee.isActive,
         loginPassword: plainPassword,
         passwordNote:  "⚠️ Yeh password sirf ek baar dikh raha hai — abhi note kar lo! Phone: " + phone,
       },
     }, { status: 201 });
 
   } catch (err) {
-    console.error("Employee POST error:", err);
-    return Response.json(
-      { success: false, error: err.message },
-      { status: 500 }
-    );
+    if (process.env.NODE_ENV === "development") console.error("Employee POST error:", err);
+    return Response.json({ success: false, error: err.message }, { status: 500 });
   }
 });
 
@@ -125,27 +154,15 @@ export const GET = verifyAdmin(async (req) => {
     const employees = await Employee.find(query).sort({ createdAt: -1 });
 
     const data = employees.map((emp) => {
-      const attObj = emp.attendance instanceof Map
-        ? Object.fromEntries(emp.attendance)
-        : Object.fromEntries(Object.entries(emp.attendance || {}));
-
-      const entries      = Object.values(attObj);
-      const presentCount = entries.filter(
-        (v) => v.status === "present" || v.status === "auto-present"
-      ).length;
-      const absentCount  = entries.filter((v) => v.status === "absent").length;
-      const totalPaid    = (emp.salaryPayments || []).reduce((s, p) => s + (p.amount || 0), 0);
-      const totalEarned  = presentCount * emp.perDaySalary;
-      const dueAmount    = Math.max(0, totalEarned - totalPaid);
-
+      const { attObj, present, absent, totalEarned, paidAmount, dueAmount } = calcStats(emp);
       return {
         ...emp.toObject(),
         attendance: attObj,
         stats: {
-          present:    presentCount,
-          absent:     absentCount,
-          totalEarned,
-          paidAmount: totalPaid,
+          present,
+          absent,
+          totalEarned,  // ✅ salary history aware
+          paidAmount,
           dueAmount,
         },
       };
@@ -157,10 +174,7 @@ export const GET = verifyAdmin(async (req) => {
     );
 
   } catch (err) {
-    console.error("Employee GET error:", err);
-    return Response.json(
-      { success: false, error: err.message },
-      { status: 500 }
-    );
+    if (process.env.NODE_ENV === "development") console.error("Employee GET error:", err);
+    return Response.json({ success: false, error: err.message }, { status: 500 });
   }
 });
