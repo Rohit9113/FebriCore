@@ -1,69 +1,118 @@
 // app/api/employees/models/Employee.js
+//
+// ✅ UPDATE: attendance mein half-day aur overtime support add kiya
+//
+// Status types:
+//   "present"      → 1.0 × perDaySalary
+//   "absent"       → 0
+//   "auto-present" → 1.0 × perDaySalary (auto-marked)
+//   "half-day"     → 0.5 × perDaySalary  ✅ NEW
+//   "overtime"     → perDaySalary + (overtimeHours × hourlyRate × 1.5) ✅ NEW
+//
+// overtimeHours: kitne extra ghante kaam kiya (sirf overtime status pe)
 
 import mongoose from "mongoose";
 
-const SalaryHistorySchema = new mongoose.Schema(
+const AttendanceEntrySchema = new mongoose.Schema(
   {
-    salary: { type: Number, required: true },
-    from:   { type: String, required: true },
-    reason: { type: String, default: "Salary Update" },
+    status: {
+      type:    String,
+      enum:    ["present", "absent", "auto-present", "half-day", "overtime"],
+      default: "absent",
+    },
+    markedBy: {
+      type:    String,
+      default: "manual",
+    },
+    // ✅ NEW: overtime ke liye extra hours
+    overtimeHours: {
+      type:    Number,
+      default: 0,
+      min:     0,
+      max:     12, // max 12 extra hours reasonable hai
+    },
   },
   { _id: false }
 );
 
-const AttendanceEntrySchema = new mongoose.Schema(
+const SalaryHistorySchema = new mongoose.Schema(
   {
-    status:   { type: String, enum: ["present", "absent", "auto-present"], required: true },
-    markedBy: { type: String, enum: ["manual", "auto"], default: "manual" },
+    salary:    { type: Number, required: true },
+    from:      { type: String, required: true }, // "YYYY-MM-DD"
+    reason:    { type: String, default: "" },
   },
   { _id: false }
 );
 
 const SalaryPaymentSchema = new mongoose.Schema(
   {
-    amount: { type: Number, required: true },
-    paidOn: { type: String, required: true },
-    note:   { type: String, default: "" },
-    dates:  [{ type: String }],
+    amount:  { type: Number, required: true },
+    paidOn:  { type: String, required: true }, // "YYYY-MM-DD"
+    note:    { type: String, default: "" },
+    dates:   [String],
   },
   { _id: false }
 );
 
 const EmployeeSchema = new mongoose.Schema(
   {
-    empId:         { type: String, required: true, unique: true },
-    name:          { type: String, required: true, trim: true },
-
-    // ✅ FIX: phone pe unique index add kiya DB level pe
-    // Pehle sirf route level pe check tha — race condition possible tha
-    phone:         { type: String, required: true, trim: true, unique: true },
-
-    address:       { type: String, default: "" },
-    joiningDate:   { type: String, required: true },
-    isActive:      { type: Boolean, default: true },
-    deactivatedOn: { type: String, default: null },
-
-    perDaySalary:  { type: Number, required: true },
-    salaryHistory: { type: [SalaryHistorySchema], default: [] },
-
-    // ── Login credentials ──────────────────────────────────────
-    // Auto-generated: name first 3 (uppercase) + phone last 4 digits
-    // e.g. "Ramesh Kumar" + "9876543210" → "RAM3210"
-    // select: false → normal queries mein kabhi nahi aata
-    password: { type: String, select: false },
-
-    // ✅ FIX: plainPassword field HATA DIYA
-    // Pehle: plainPassword: { type: String, select: false }
-    // Yeh plain text password DB mein store karta tha — BAHUT BADI security hole
-    // Ab password sirf employee create karte waqt ek baar response mein
-    // dikhaya jaata hai — DB mein kabhi save nahi hoga
-
-    // ── Work data ──────────────────────────────────────────────
-    attendance:     { type: Map, of: AttendanceEntrySchema, default: {} },
-    paidDates:      { type: [String], default: [] },
-    salaryPayments: { type: [SalaryPaymentSchema], default: [] },
-
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
+    empId: {
+      type:   String,
+      unique: true,
+      trim:   true,
+    },
+    name: {
+      type:     String,
+      required: true,
+      trim:     true,
+    },
+    phone: {
+      type:     String,
+      required: true,
+      unique:   true,
+      trim:     true,
+    },
+    address: {
+      type:    String,
+      default: "",
+      trim:    true,
+    },
+    joiningDate: {
+      type:    String,
+      default: () => new Date().toISOString().split("T")[0],
+    },
+    perDaySalary: {
+      type:    Number,
+      default: 0,
+    },
+    // ✅ NEW: overtime rate — agar custom rate set karna ho
+    // Default: perDaySalary / 8 (8-hour shift based)
+    // Agar 0 ho toh automatic calculate hoga
+    overtimeRatePerHour: {
+      type:    Number,
+      default: 0,
+    },
+    isActive: {
+      type:    Boolean,
+      default: true,
+    },
+    deactivatedOn: {
+      type:    String,
+      default: null,
+    },
+    // ✅ UPDATED: AttendanceEntrySchema use karo
+    attendance: {
+      type:    Map,
+      of:      AttendanceEntrySchema,
+      default: {},
+    },
+    salaryHistory:  [SalaryHistorySchema],
+    salaryPayments: [SalaryPaymentSchema],
+    paidDates:      [String],
+    password: {
+      type:   String,
+      select: false,
+    },
   },
   { timestamps: true }
 );

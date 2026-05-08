@@ -1,145 +1,155 @@
-//app/api/employees/[id]/attendance/route.js
-import { connectDB } from "@/lib/db";
-import Employee from "@/app/api/employees/models/Employee";
+// app/api/employees/[id]/attendance/route.js
+//
+// ✅ FIX: params ko await kiya — Next.js 15 mein params Promise hai
+// ✅ UPDATE: overtime mein overtimeAmount (custom ₹) support add kiya
+//
+// PATCH body:
+//   date:           "YYYY-MM-DD"   (required)
+//   status:         "present" | "absent" | "half-day" | "overtime"
+//   overtimeHours:  number  — optional, hours se calculate
+//   overtimeAmount: number  — optional, seedha custom ₹ (isko priority milti hai)
+//   superAdmin:     boolean — past date change ke liye
+
+import { connectDB }   from "@/lib/db";
+import Employee        from "@/app/api/employees/models/Employee";
 import { verifyAdmin } from "@/app/api/middleware/auth";
 
+const VALID_STATUSES = ["present", "absent", "auto-present", "half-day", "overtime"];
 const TODAY = () => new Date().toISOString().split("T")[0];
 
-export const PATCH = verifyAdmin(async (req, context) => {
+export const PATCH = verifyAdmin(async (req, { params }) => {
   try {
     await connectDB();
-    const { id } = await context.params;
 
-    const { date, status, superAdmin } = await req.json();
+    // ✅ FIX: Next.js 15 — params await karo
+    const { id } = await params;
 
-    // ── Validate inputs ───────────────────────
-    if (!date || !status) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "date aur status required hain",
-      }), { status: 400 });
+    const body = await req.json().catch(() => null);
+    if (!body) {
+      return Response.json(
+        { success: false, error: "Request body invalid hai" },
+        { status: 400 }
+      );
     }
 
-    const validStatuses = ["present", "absent"];
-    if (!validStatuses.includes(status)) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "status sirf 'present' ya 'absent' ho sakta hai",
-      }), { status: 400 });
+    const { date, status, superAdmin, overtimeHours, overtimeAmount } = body;
+
+    if (!date || !status) {
+      return Response.json(
+        { success: false, error: "date aur status dono required hain" },
+        { status: 400 }
+      );
+    }
+
+    if (!VALID_STATUSES.includes(status)) {
+      return Response.json(
+        { success: false, error: `Invalid status. Allowed: ${VALID_STATUSES.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    if (date !== TODAY() && !superAdmin) {
+      return Response.json(
+        { success: false, error: "Sirf aaj ka attendance mark kar sakte ho" },
+        { status: 403 }
+      );
+    }
+
+    // ✅ Overtime — amount ko priority, ya hours se calculate
+    let validOTHours  = 0;
+    let validOTAmount = 0;
+
+    if (status === "overtime") {
+      validOTAmount = Math.max(0, Number(overtimeAmount) || 0);
+      validOTHours  = Math.max(0, Number(overtimeHours)  || 0);
+
+      if (validOTAmount <= 0 && validOTHours <= 0) {
+        return Response.json(
+          { success: false, error: "Overtime ke liye amount ya hours mein se koi ek zaroori hai" },
+          { status: 400 }
+        );
+      }
     }
 
     const employee = await Employee.findById(id);
     if (!employee) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "Employee nahi mila",
-      }), { status: 404 });
+      return Response.json(
+        { success: false, error: "Employee nahi mila" },
+        { status: 404 }
+      );
     }
 
-    const today = TODAY();
-    const isToday = date === today;
-    const existingEntry = employee.attendance.get(date);
-
-    // ── NORMAL MODE: strict locking rules ────
-    if (!superAdmin) {
-      // Only today's date allowed
-      if (!isToday) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: "Normal mode mein sirf aaj ka attendance mark ho sakta hai",
-        }), { status: 403 });
-      }
-
-      // If already manually marked (not auto), it can still be re-marked today
-      // (today is always editable — it's only past manual days that are locked)
+    if (!employee.isActive && !superAdmin) {
+      return Response.json(
+        { success: false, error: "Inactive employee ka attendance mark nahi kar sakte" },
+        { status: 403 }
+      );
     }
 
-    // ── SUPER ADMIN MODE: any date editable ──
-    // No additional checks — admin can change anything
-
-    // ── Apply the change ──────────────────────
     employee.attendance.set(date, {
       status,
-      markedBy: "manual",
+      markedBy:       superAdmin ? "superAdmin" : "manual",
+      overtimeHours:  validOTHours,
+      overtimeAmount: validOTAmount,
     });
 
+    employee.markModified("attendance");
     await employee.save();
 
-    return new Response(JSON.stringify({
+    return Response.json({
       success: true,
-      message: superAdmin
-        ? `Admin override: ${date} → ${status}`
-        : `Aaj (${date}) ka attendance ${status} mark ho gaya`,
-      data: {
-        date,
-        status,
-        markedBy: "manual",
-        superAdmin: !!superAdmin,
-      },
-    }), { status: 200 });
+      data: { date, status, overtimeHours: validOTHours, overtimeAmount: validOTAmount },
+    });
 
   } catch (err) {
-    return new Response(JSON.stringify({
-      success: false,
-      error: err.message,
-    }), { status: 500 });
+    console.error("Attendance PATCH error:", err);
+    return Response.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
   }
 });
 
-// ─────────────────────────────────────────────
-// POST  /api/employees/[id]/attendance
-// Auto-mark attendance as "auto-present" for today
-// Called by the server's midnight scheduler
-// Only marks if today's date is not already recorded
-// ─────────────────────────────────────────────
-export const POST = verifyAdmin(async (req, context) => {
+export const POST = verifyAdmin(async (req, { params }) => {
   try {
     await connectDB();
-    const { id } = await context.params;
+
+    // ✅ FIX: Next.js 15 — params await karo
+    const { id } = await params;
+    const today  = TODAY();
 
     const employee = await Employee.findById(id);
-    if (!employee) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "Employee nahi mila",
-      }), { status: 404 });
+    if (!employee || !employee.isActive) {
+      return Response.json(
+        { success: false, error: "Employee nahi mila ya inactive hai" },
+        { status: 404 }
+      );
     }
 
-    if (!employee.isActive) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "Inactive employee ka auto-attendance nahi ho sakta",
-      }), { status: 400 });
-    }
-
-    const today = TODAY();
-    const alreadyMarked = employee.attendance.get(today);
-
-    if (alreadyMarked) {
-      return new Response(JSON.stringify({
-        success: false,
-        message: "Aaj ka attendance pehle se mark hai",
-        data: { date: today, ...alreadyMarked },
-      }), { status: 200 });
+    if (employee.attendance.has(today)) {
+      return Response.json({ success: true, data: { skipped: true } });
     }
 
     employee.attendance.set(today, {
-      status: "auto-present",
-      markedBy: "auto",
+      status:         "auto-present",
+      markedBy:       "auto",
+      overtimeHours:  0,
+      overtimeAmount: 0,
     });
 
+    employee.markModified("attendance");
     await employee.save();
 
-    return new Response(JSON.stringify({
+    return Response.json({
       success: true,
-      message: `Auto-present mark ho gaya: ${today}`,
       data: { date: today, status: "auto-present", markedBy: "auto" },
-    }), { status: 201 });
+    });
 
   } catch (err) {
-    return new Response(JSON.stringify({
-      success: false,
-      error: err.message,
-    }), { status: 500 });
+    console.error("Attendance POST error:", err);
+    return Response.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
   }
 });
