@@ -1,30 +1,13 @@
 // src/app/api/middleware/rateLimit.js
-//
-// ✅ Rate Limiting — Login routes ke liye brute force protection
-//
-// Kaise kaam karta hai:
-//   - Har IP ka attempt count aur timestamp track karo (in-memory Map)
-//   - MAX_ATTEMPTS baar fail hone pe LOCKOUT_MINUTES ke liye block karo
-//   - Successful login pe attempts reset ho jaate hain
-//   - Server restart pe memory clear hoti hai (yeh okay hai)
-//
-// Kahan use karo:
-//   - app/api/admin/login/route.js
-//   - app/api/employees/auth/login/route.js
-//
-// Usage:
-//   import { adminLoginLimiter, employeeLoginLimiter } from "@/app/api/middleware/rateLimit";
-//   export const POST = adminLoginLimiter(async (req) => { ... });
-
 // ─── Config ───────────────────────────────────────────────────────
 const ADMIN_CONFIG = {
   MAX_ATTEMPTS:     5,   // 5 baar fail → lock
-  LOCKOUT_MINUTES: 15,   // 15 min ke liye block
+  LOCKOUT_MINUTES: 15,   //  block for 15 min
   WINDOW_MINUTES:  10,   // 10 min window mein 5 attempts
 };
 
 const EMPLOYEE_CONFIG = {
-  MAX_ATTEMPTS:     8,   // Employee ke liye thoda zyada lenient
+  MAX_ATTEMPTS:     8,
   LOCKOUT_MINUTES: 10,
   WINDOW_MINUTES:  10,
 };
@@ -34,11 +17,10 @@ const EMPLOYEE_CONFIG = {
 const adminStore    = new Map();
 const employeeStore = new Map();
 
-// Cleanup — purani entries har 30 min mein hata do (memory leak prevent)
 const cleanup = (store) => {
   const now = Date.now();
   for (const [ip, data] of store.entries()) {
-    const windowMs = 30 * 60 * 1000; // 30 min
+    const windowMs = 30 * 60 * 1000;
     if (data.firstAttempt && (now - data.firstAttempt) > windowMs) {
       store.delete(ip);
     }
@@ -232,9 +214,6 @@ export const employeeLoginLimiter = (handler) => {
     return response;
   };
 };
-
-// ─── Manual reset utility (admin panel se use karo agar chahiye) ──
-// Kisi IP ko manually unlock karna ho toh:
 export const unlockIP = (ip, type = "admin") => {
   const store = type === "admin" ? adminStore : employeeStore;
   store.delete(ip);

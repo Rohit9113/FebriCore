@@ -5,8 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
 
-// ─── Routes ──────────────────────────────────────────────────────
-// Admin ke liye sirf top-level routes (sub-sections dashboard ke andar hain)
 const BASE_LINKS = [
   { href: "/",          label: "Home",      icon: "🏠" },
 ];

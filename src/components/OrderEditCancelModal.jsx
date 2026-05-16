@@ -1,12 +1,5 @@
 "use client";
 // src/components/OrderEditCancelModal.jsx
-//
-// ✅ NEW Feature 2: Order Edit + Cancel
-//
-// Do modals ek file mein:
-// 1. EditOrderModal  — Customer info + order items edit karo
-// 2. CancelOrderModal — Confirm karke order cancel karo
-
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";

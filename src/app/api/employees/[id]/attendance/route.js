@@ -1,15 +1,4 @@
 // app/api/employees/[id]/attendance/route.js
-//
-// ✅ FIX: params ko await kiya — Next.js 15 mein params Promise hai
-// ✅ UPDATE: overtime mein overtimeAmount (custom ₹) support add kiya
-//
-// PATCH body:
-//   date:           "YYYY-MM-DD"   (required)
-//   status:         "present" | "absent" | "half-day" | "overtime"
-//   overtimeHours:  number  — optional, hours se calculate
-//   overtimeAmount: number  — optional, seedha custom ₹ (isko priority milti hai)
-//   superAdmin:     boolean — past date change ke liye
-
 import { connectDB }   from "@/lib/db";
 import Employee        from "@/app/api/employees/models/Employee";
 import { verifyAdmin } from "@/app/api/middleware/auth";
@@ -21,7 +10,6 @@ export const PATCH = verifyAdmin(async (req, { params }) => {
   try {
     await connectDB();
 
-    // ✅ FIX: Next.js 15 — params await karo
     const { id } = await params;
 
     const body = await req.json().catch(() => null);
@@ -55,7 +43,6 @@ export const PATCH = verifyAdmin(async (req, { params }) => {
       );
     }
 
-    // ✅ Overtime — amount ko priority, ya hours se calculate
     let validOTHours  = 0;
     let validOTAmount = 0;
 
@@ -114,7 +101,6 @@ export const POST = verifyAdmin(async (req, { params }) => {
   try {
     await connectDB();
 
-    // ✅ FIX: Next.js 15 — params await karo
     const { id } = await params;
     const today  = TODAY();
 

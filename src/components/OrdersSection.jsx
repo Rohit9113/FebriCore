@@ -15,6 +15,15 @@ const METAL_TYPES = ["MS", "GI", "SS", "Other"];
 const EMPTY_ORDER = () => ({ itemName:"", metalType:"MS", height:"", width:"", perKgRate:"", extraCharge:"", description:"", amount:"" });
 const TODAY = new Date().toISOString().split("T")[0];
 
+// ✅ FIX 5: Phone validation
+// Indian mobile: 10 digits, starts with 6-9
+const validatePhone = (phone) => {
+  const digits = String(phone).replace(/\D/g, "");
+  if (digits.length !== 10) return { valid: false, msg: "Phone number 10 digits ka hona chahiye" };
+  if (!/^[6-9]/.test(digits)) return { valid: false, msg: "Valid Indian mobile number daalo (6-9 se start)" };
+  return { valid: true, msg: "" };
+};
+
 const inp = "w-full bg-[#0c0e1a] border border-[#1e2235] rounded-2xl px-4 py-3.5 text-white text-sm placeholder-[#2e3248] focus:outline-none focus:border-amber-500/60 focus:bg-[#0f1120] focus:ring-2 focus:ring-amber-500/12 transition-all duration-200";
 
 function WeldSpark({ active }) {
@@ -428,6 +437,7 @@ export default function OrdersSection() {
   const [toast,    setToast]    = useState(null);
   const [done,     setDone]     = useState(false);
   const [dir,      setDir]      = useState(1);
+  const [phoneError, setPhoneError] = useState(""); // ✅ FIX 5
 
   const showToast = (msg, type="success") => { setToast({msg,type}); setTimeout(()=>setToast(null),3500); };
   const setField  = (f,v) => setCustomer(p=>({...p,[f]:v}));
@@ -435,7 +445,9 @@ export default function OrdersSection() {
   const addOrder  = () => setOrders(p=>[...p,EMPTY_ORDER()]);
   const remOrder  = (i) => { if(orders.length===1) return showToast("Kam se kam ek order chahiye","error"); setOrders(p=>p.filter((_,idx)=>idx!==i)); };
 
-  const canS2 = !!(customer.orderType && customer.customerName && customer.phone);
+  // ✅ FIX 5: phone bhi validate karo
+  const phoneValid = customer.phone ? validatePhone(customer.phone).valid : false;
+  const canS2 = !!(customer.orderType && customer.customerName && customer.phone && phoneValid);
   const canS3 = orders.length>0 && orders.every(o => customer.orderType==="Normal Order" ? o.itemName : (o.description||o.amount));
   const goTo  = (s) => { setDir(s>step?1:-1); setStep(s); };
 
@@ -542,14 +554,56 @@ export default function OrdersSection() {
                 {customer.orderType && (
                   <motion.div initial={{opacity:0,y:20,scale:0.98}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:-10}} transition={{type:"spring",stiffness:280,damping:26}} className="space-y-3.5">
                     <ForgeField label="Customer Name" icon="👤"><input value={customer.customerName} onChange={e=>setField("customerName",e.target.value)} placeholder="Roopa Kumari" autoComplete="off" className={inp} /></ForgeField>
-                    <ForgeField label="Phone Number" icon="📞"><input type="tel" inputMode="tel" value={customer.phone} onChange={e=>setField("phone",e.target.value)} placeholder="8260519735" className={inp} /></ForgeField>
+                    <ForgeField label="Phone Number" icon="📞">
+                      <input
+                        type="tel"
+                        inputMode="tel"
+                        value={customer.phone}
+                        onChange={e => {
+                          // ✅ FIX 5: sirf digits allow karo, max 10
+                          const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+                          setField("phone", digits);
+                          if (digits.length > 0) {
+                            setPhoneError(validatePhone(digits).msg);
+                          } else {
+                            setPhoneError("");
+                          }
+                        }}
+                        placeholder="8260519735"
+                        maxLength={10}
+                        className={inp}
+                      />
+                      {/* Live validation feedback */}
+                      {customer.phone && (
+                        phoneError ? (
+                          <p className="text-red-400 text-[11px] mt-1.5 flex items-center gap-1">
+                            ⚠️ {phoneError}
+                          </p>
+                        ) : customer.phone.length === 10 ? (
+                          <p className="text-emerald-400 text-[11px] mt-1.5 flex items-center gap-1">
+                            ✓ Valid phone number
+                          </p>
+                        ) : (
+                          <p className="text-[#4a5580] text-[11px] mt-1.5">
+                            {10 - customer.phone.length} digits aur chahiye
+                          </p>
+                        )
+                      )}
+                    </ForgeField>
                     <ForgeField label="Address" icon="📍"><textarea rows={2} value={customer.address} onChange={e=>setField("address",e.target.value)} placeholder="Jaltanda, Ranchi..." className={`${inp} resize-none`} /></ForgeField>
                     <ForgeField label="Order Date" icon="📅"><input type="date" value={customer.date} onChange={e=>setField("date",e.target.value)} className={inp} /></ForgeField>
                   </motion.div>
                 )}
               </AnimatePresence>
-              <ShimmerBtn active={canS2} onClick={()=>canS2?goTo(2):showToast("Type, naam aur phone required hai","error")} className="w-full h-14 rounded-2xl text-base mt-2">
-                {canS2?"Next →":"First Fill the all details"}
+              <ShimmerBtn active={canS2} onClick={()=>{
+                if (!customer.orderType) return showToast("Order type select karo","error");
+                if (!customer.customerName) return showToast("Customer naam required hai","error");
+                if (!customer.phone) return showToast("Phone number required hai","error");
+                const pv = validatePhone(customer.phone);
+                if (!pv.valid) return showToast(pv.msg,"error");
+                goTo(2);
+              }} className="w-full h-14 rounded-2xl text-base mt-2">
+                {canS2?"Next →":"Pehle sab details bharo"}
               </ShimmerBtn>
             </motion.div>
           </AnimatePresence>

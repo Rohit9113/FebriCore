@@ -1,7 +1,5 @@
 "use client";
 // src/components/RepairingSection.jsx
-// ✅ Feature 14: Edit + Delete support added
-
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";

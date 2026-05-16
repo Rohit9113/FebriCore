@@ -20,10 +20,12 @@ api.interceptors.request.use((cfg) => {
 
 const fmtAmt   = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 const fmtShort = (n) => {
-  const v = Math.abs(n || 0);
-  if (v >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
-  if (v >= 1000)   return `₹${(n / 1000).toFixed(1)}K`;
-  return `₹${Math.round(n)}`;
+  const num  = Number(n || 0);
+  const abs  = Math.abs(num);
+  const sign = num < 0 ? "-" : "";
+  if (abs >= 100000) return `${sign}₹${(abs / 100000).toFixed(1)}L`;
+  if (abs >= 1000)   return `${sign}₹${(abs / 1000).toFixed(1)}K`;
+  return `${sign}₹${Math.round(abs)}`;
 };
 const fmtDate = (d) => {
   if (!d) return "—";
@@ -31,7 +33,8 @@ const fmtDate = (d) => {
 };
 
 const CURRENT_YEAR = new Date().getFullYear();
-const YEAR_OPTIONS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - i);
+const YEAR_OPTIONS  = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - i);
+const YEARS_OPTIONS = [3, 5, 7, 10]; // ✅ FIX 2: yearly view ke liye
 
 // ─── Custom Tooltip ───────────────────────────────────────────────
 function CustomTooltip({ active, payload, label }) {
@@ -52,8 +55,9 @@ function CustomTooltip({ active, payload, label }) {
 
 // ═══════════════════════════════════════════════════════════════════
 export default function IncomeSection() {
-  const [view,         setView]         = useState("monthly");
-  const [year,         setYear]         = useState(CURRENT_YEAR);
+  const [view,          setView]          = useState("monthly");
+  const [year,          setYear]          = useState(CURRENT_YEAR);
+  const [yearsCount,    setYearsCount]    = useState(5); // ✅ FIX 2
   const [data,         setData]         = useState(null);
   const [orders,       setOrders]       = useState([]);
   const [loading,      setLoading]      = useState(true);
@@ -66,14 +70,14 @@ export default function IncomeSection() {
     try {
       const params = view === "monthly"
         ? { view: "monthly", year }
-        : { view: "yearly", years: 5 };
+        : { view: "yearly", years: yearsCount }; // ✅ FIX 2: hardcoded 5 hata diya
       const { data: res } = await api.get("/dashboard/income", { params });
       if (res.success) setData(res.data);
       else setError(res.error || "Data load nahi hua");
     } catch (err) {
       setError(err?.response?.data?.error || "Server error");
     } finally { setLoading(false); }
-  }, [view, year]);
+  }, [view, year, yearsCount]); // ✅ FIX 2: yearsCount dependency add kiya
 
   const fetchOrders = useCallback(async () => {
     setOrdersLoading(true);
@@ -136,6 +140,20 @@ export default function IncomeSection() {
             </motion.div>
           )}
         </AnimatePresence>
+        {/* ✅ FIX 2: Yearly view mein years selector */}
+        <AnimatePresence>
+          {view === "yearly" && (
+            <motion.div initial={{ opacity:0, scale:0.95 }} animate={{ opacity:1, scale:1 }} exit={{ opacity:0, scale:0.95 }} transition={{ duration:0.15 }}
+              className="flex bg-[#13151f] border border-white/8 rounded-2xl p-1 gap-1">
+              {YEARS_OPTIONS.map((y) => (
+                <button key={y} onClick={() => setYearsCount(y)}
+                  className={`px-3 py-2 rounded-xl text-xs font-bold transition-all duration-150 ${yearsCount===y?"bg-amber-500/20 border border-amber-500/30 text-amber-400":"text-[#6b7a99] hover:text-white"}`}>
+                  {y}Y
+                </button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Loading */}
@@ -162,7 +180,7 @@ export default function IncomeSection() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-[#4a5170] font-bold uppercase tracking-wide mb-1">
-                    {view==="monthly" ? `Total Income ${year}` : "Total Income (All Years)"}
+                    {view==="monthly" ? `Total Income ${year}` : `Total Income (${yearsCount} Years)`}
                   </p>
                   <p className="text-3xl font-black text-amber-400" style={{ fontFamily:"'Syne',sans-serif" }}>
                     {fmtAmt(s.totalIncome)}
@@ -205,7 +223,7 @@ export default function IncomeSection() {
 
           {/* ── Bar Chart ── */}
           <div className="bg-[#13151f] border border-white/8 rounded-2xl p-4">
-            <p className="text-white font-bold text-sm mb-0.5">📊 {view==="monthly"?`Monthly Income — ${year}`:"Yearly Income"}</p>
+            <p className="text-white font-bold text-sm mb-0.5">📊 {view==="monthly"?`Monthly Income — ${year}`:`Yearly Income — Last ${yearsCount} Years`}</p>
             <p className="text-[#4a5170] text-xs mb-4">Har period ka total income</p>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={chartRows} margin={{ top:8, right:4, left:-20, bottom:0 }}>

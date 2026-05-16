@@ -1,35 +1,42 @@
 // app/api/orders/models/CompletedOrder.js
-// ✅ NEW: materialUsage — order complete karte waqt kitna iron use hua track karo
-// ✅ NEW: totalMaterialCost — actual purchase rate se cost
-// ✅ NEW: grossProfit — saleAmount - materialCost
-// ✅ FIX: createdBy mein ref: "Admin" add kiya
-
 import mongoose from "mongoose";
 
-// ── Material usage per entry ──────────────────────────────────────
-// Har entry ke saath kitna aur kaun sa metal use hua
 const MaterialUsageSchema = new mongoose.Schema(
   {
-    metalType:    { type: String }, // "MS", "GI", "Other"
-    kgUsed:       { type: Number, default: 0 }, // kitna kg use hua
-    purchaseRate: { type: Number, default: 0 }, // stock se khareedne ka rate
-    materialCost: { type: Number, default: 0 }, // kgUsed × purchaseRate
+    metalType:    { type: String },
+    kgUsed:       { type: Number, default: 0 },
+    purchaseRate: { type: Number, default: 0 },
+    materialCost: { type: Number, default: 0 },
   },
   { _id: false }
 );
 
-// ── Per-entry payment breakdown ───────────────────────────────────
 const EntrySchema = new mongoose.Schema(
   {
     label:        { type: String },
     weight:       { type: Number, default: 0 },
-    ratePerKg:    { type: Number, default: 0 }, // SALE rate (customer ko charge)
-    amount:       { type: Number, default: 0 }, // weight × saleRate
+    ratePerKg:    { type: Number, default: 0 },
+    amount:       { type: Number, default: 0 },
     extraCharges: { type: Array,  default: [] },
-    // ✅ NEW: is entry ka material cost
     metalType:    { type: String },
-    purchaseRate: { type: Number, default: 0 }, // stock purchase rate
-    materialCost: { type: Number, default: 0 }, // weight × purchaseRate
+    purchaseRate: { type: Number, default: 0 },
+    materialCost: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+const PaymentEntrySchema = new mongoose.Schema(
+  {
+    completedDate:        { type: String },
+    entries:              { type: [EntrySchema], default: [] },
+    totalAmount:          { type: Number, default: 0 },
+    finalAmount:          { type: Number, default: 0 },
+    receivedAmount:       { type: Number, default: 0 },
+    dueAmount:            { type: Number, default: 0 },
+    materialUsage:        { type: [MaterialUsageSchema], default: [] },
+    totalMaterialCost:    { type: Number, default: 0 },
+    grossProfit:          { type: Number, default: 0 },
+    previouslyReceived:   { type: Number, default: 0 },
+    totalReceivedTillNow: { type: Number, default: 0 },
   },
   { _id: false }
 );
@@ -44,25 +51,25 @@ const CompletedOrderSchema = new mongoose.Schema(
       entries:        { type: [EntrySchema], default: [] },
 
       // ── Sale amounts ──────────────────────────────────────────
-      totalAmount:    { type: Number, default: 0 }, // full sale value
-      finalAmount:    { type: Number, default: 0 }, // jo mila (= receivedAmount)
-      receivedAmount: { type: Number, default: 0 }, // compatibility
-      dueAmount:      { type: Number, default: 0 }, // abhi baaki
+      totalAmount:    { type: Number, default: 0 },
+      finalAmount:    { type: Number, default: 0 },
+      receivedAmount: { type: Number, default: 0 },
+      dueAmount:      { type: Number, default: 0 },
 
-      // ✅ NEW: Material cost tracking
-      // ─────────────────────────────────────────────────────────
-      // Agar Normal Order hai (weight-based) to material cost track hoga
-      // Contract/Repairing mein material usage optional hai
-      materialUsage:     { type: [MaterialUsageSchema], default: [] },
-      totalMaterialCost: { type: Number, default: 0 }, // sum of all materialUsage costs
-      grossProfit:       { type: Number, default: 0 }, // totalAmount - totalMaterialCost
-      // ─────────────────────────────────────────────────────────
+      // ── Material cost tracking ────────────────────────────────
+      materialUsage:        { type: [MaterialUsageSchema], default: [] },
+      totalMaterialCost:    { type: Number, default: 0 },
+      grossProfit:          { type: Number, default: 0 },
+
+      // ── Partial payment tracking ──────────────────────────────
+      previouslyReceived:   { type: Number, default: 0 },
+      totalReceivedTillNow: { type: Number, default: 0 },
+      paymentHistory: { type: [PaymentEntrySchema], default: [] },
     },
 
-    // ✅ FIX: ref add kiya
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Admin",
+      ref:  "Admin",
       required: true,
     },
   },

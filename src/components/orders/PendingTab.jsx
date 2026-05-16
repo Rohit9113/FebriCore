@@ -1,8 +1,5 @@
 "use client";
 // src/components/orders/PendingTab.jsx
-// Sirf pure pending orders (Partially Completed wale DuesTab mein hain)
-// Complete modal — weight, rate, amount fill karo
-
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -11,9 +8,8 @@ import {
 } from "./orderUtils";
 import { EditOrderModal, CancelOrderModal } from "@/components/OrderEditCancelModal";
 
-const ITEMS_PER_PAGE = 3;
+const ITEMS_PER_PAGE = 7;
 
-// ─── PendingCard ──────────────────────────────────────────────────
 function PendingCard({ order, onComplete, onEdit, onCancel }) {
   const [expanded, setExpanded] = useState(false);
   const groups = groupOrders(order.orders);

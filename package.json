@@ -9,7 +9,7 @@
     "start:port": "next start -p ${PORT:-3000}"
   },
   "dependencies": {
-    "@netlify/plugin-nextjs": "^5.15.9",
+    "@netlify/plugin-nextjs": "^5.15.11",
     "axios": "^1.12.2",
     "bcryptjs": "^3.0.2",
     "chart.js": "^4.5.1",

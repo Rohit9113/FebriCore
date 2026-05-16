@@ -1,12 +1,5 @@
 "use client";
 // src/components/goodsInStock.jsx
-//
-// ✅ NEW: Edit + Delete UI add kiya
-//   - ViewModal mein har item pe ✏️ Edit aur 🗑️ Delete buttons
-//   - EditGoodsModal — pre-filled form, PATCH /api/goods/[id]
-//   - DeleteConfirmModal — confirm karo, DELETE /api/goods/[id]
-//   - fetchAll() ke baad UI auto-refresh hota hai
-
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
 import { motion, AnimatePresence, useSpring, useMotionValue, useTransform } from "framer-motion";
@@ -345,7 +338,6 @@ function AddGoodsModal({ onClose, onSuccess }) {
   );
 }
 
-// ─── ✅ NEW: Edit Goods Modal ──────────────────────────────────────
 // Pre-filled form — PATCH /api/goods/[id]
 function EditGoodsModal({ item, onClose, onSuccess }) {
   const [form,    setForm]    = useState({
@@ -679,7 +671,6 @@ function ViewModal({ date, items, onClose, onEdit, onDelete }) {
       doc.text(`Total Amount: Rs.${totalAmt.toLocaleString("en-IN")}`, 130, fy + 10);
       doc.save(`Purchase_${date}.pdf`);
     } catch (e) {
-      // ✅ FIX 30: Dev-only guard
       if (process.env.NODE_ENV === "development") {
         console.error("PDF error:", e);
       }
@@ -719,7 +710,6 @@ function ViewModal({ date, items, onClose, onEdit, onDelete }) {
           </div>
         </div>
 
-        {/* ✅ Items — Edit + Delete buttons on each */}
         <div className="p-5 space-y-3">
 
           {/* Column hint */}
@@ -814,10 +804,8 @@ export default function GoodsInStock() {
   const [toasts,      setToasts]      = useState([]);
   const [search,      setSearch]      = useState("");
 
-  // ✅ NEW: Edit / Delete state
-  const [editItem,   setEditItem]   = useState(null); // goods item being edited
-  const [deleteItem, setDeleteItem] = useState(null); // goods item being deleted
-
+  const [editItem,   setEditItem]   = useState(null);
+  const [deleteItem, setDeleteItem] = useState(null);
   const ITEMS_PER_PAGE = 5;
 
   const addToast = useCallback((msg, type = "info") => {
@@ -889,20 +877,18 @@ export default function GoodsInStock() {
     fetchAll();
   };
 
-  // ✅ NEW: After edit/delete — refresh + close ViewModal
   const handleEditSuccess = (msg) => {
     addToast(msg, "success");
-    setViewDate(null); // ViewModal band karo
+    setViewDate(null);
     fetchAll();
   };
 
   const handleDeleteSuccess = (msg) => {
     addToast(msg, "success");
-    setViewDate(null); // ViewModal band karo
+    setViewDate(null);
     fetchAll();
   };
 
-  // ✅ Smart page numbers with ellipsis
   const getPageNumbers = () => {
     const pages = [];
     for (let p = 1; p <= totalPages; p++) {
@@ -1098,20 +1084,18 @@ export default function GoodsInStock() {
             date={fmtDisplayDate(viewDate)}
             items={grouped[viewDate]}
             onClose={() => setViewDate(null)}
-            // ✅ NEW: Edit/Delete handlers ViewModal ko pass karo
             onEdit={(item) => {
-              setViewDate(null);        // ViewModal band karo pehle
-              setEditItem(item);        // phir EditModal kholo
+              setViewDate(null);
+              setEditItem(item);
             }}
             onDelete={(item) => {
-              setViewDate(null);        // ViewModal band karo pehle
-              setDeleteItem(item);      // phir DeleteModal kholo
+              setViewDate(null); 
+              setDeleteItem(item); 
             }}
           />
         )}
       </AnimatePresence>
 
-      {/* ✅ NEW: Edit Modal */}
       <AnimatePresence>
         {editItem && (
           <EditGoodsModal

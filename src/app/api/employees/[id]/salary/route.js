@@ -1,24 +1,4 @@
 // app/api/employees/[id]/salary/route.js
-//
-// ✅ BUG FIX: Salary history correctly maintained
-//
-// Problem pehle:
-//   Employee joining: perDaySalary=300, salaryHistory=[]
-//   Salary increase:  perDaySalary=350, salaryHistory=[{salary:350, from:"2025-12-01"}]
-//
-//   Calculation:  present_days * perDaySalary (350)
-//   October days bhi 350 se count ho rahe the — WRONG
-//
-// Fix:
-//   Salary increase ke waqt, agar salaryHistory EMPTY hai →
-//   pehle INITIAL salary ka entry add karo (joiningDate se)
-//   PHIR naya salary add karo (effectiveDate se)
-//
-//   History ab:
-//   [{salary:300, from:"2025-10-20"}, {salary:350, from:"2025-12-01"}]
-//
-//   Calculation: har date ke liye us time ka applicable salary use karo
-
 import { connectDB }   from "@/lib/db";
 import Employee        from "@/app/api/employees/models/Employee";
 import { verifyAdmin } from "@/app/api/middleware/auth";
@@ -51,26 +31,18 @@ export const PATCH = verifyAdmin(async (req, context) => {
         { status: 404 }
       );
     }
-
-    // ── ✅ KEY FIX: Initial salary history preserve karo ───────────
-    // Agar salaryHistory empty hai, matlab pehle koi increment nahi hua
-    // Toh CURRENT perDaySalary ko joiningDate se add karo — yeh hai original salary
     if (emp.salaryHistory.length === 0) {
       emp.salaryHistory.push({
-        salary: emp.perDaySalary,              // original salary (e.g. 300)
-        from:   emp.joiningDate,               // from joining date
+        salary: emp.perDaySalary,
+        from:   emp.joiningDate,
         reason: "Initial Salary",
       });
     }
-
-    // ── Duplicate check — same date pe already entry hai? ──────────
     const existingIdx = emp.salaryHistory.findIndex(h => h.from === effectiveDate);
     if (existingIdx !== -1) {
-      // Same date pe update karo
       emp.salaryHistory[existingIdx].salary = Number(newSalary);
       emp.salaryHistory[existingIdx].reason  = reason || "Salary Update";
     } else {
-      // Naya entry add karo
       emp.salaryHistory.push({
         salary: Number(newSalary),
         from:   effectiveDate,

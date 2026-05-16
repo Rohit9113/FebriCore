@@ -3,11 +3,6 @@ import { connectDB } from "@/lib/db";
 import Expense from "@/app/api/expenses/models/Expense";
 import { verifyAdmin } from "@/app/api/middleware/auth";
 
-// ─────────────────────────────────────────────
-// POST  /api/expenses
-// Create a new goods expense
-// Body: { category, desc, qty, unit, rate, amount, date }
-// ─────────────────────────────────────────────
 export const POST = verifyAdmin(async (req) => {
   try {
     await connectDB();
@@ -48,23 +43,16 @@ export const POST = verifyAdmin(async (req) => {
   }
 });
 
-// ─────────────────────────────────────────────
 // GET  /api/expenses
-// Fetch all expenses — optional filters via query params:
-//   ?category=Fuel
-//   ?month=2025-09      (YYYY-MM prefix match)
-//   ?sort=asc|desc      (by date, default desc)
-// ─────────────────────────────────────────────
 export const GET = verifyAdmin(async (req) => {
   try {
     await connectDB();
 
     const { searchParams } = new URL(req.url);
     const category = searchParams.get("category");
-    const month    = searchParams.get("month");   // "YYYY-MM"
+    const month    = searchParams.get("month");  
     const sort     = searchParams.get("sort") === "asc" ? 1 : -1;
 
-    // type field missing ho (purani entries) ya "goods" ho — dono lo
     const query = { $or: [{ type: "goods" }, { type: { $exists: false } }, { type: null }] };
 
     if (category && category !== "All") {

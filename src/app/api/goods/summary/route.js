@@ -1,9 +1,4 @@
 // app/api/goods/summary/route.js
-//
-// ✅ FIX: Remaining stock = Total Purchased - Total Used (from CompletedOrders)
-// ✅ NEW: Per metal type: purchased, used, remaining
-// ✅ NEW: Total investment value in stock
-
 import { connectDB }   from "@/lib/db";
 import Goods           from "@/app/api/goods/model";
 import CompletedOrder  from "@/app/api/orders/models/CompletedOrder";
@@ -17,36 +12,41 @@ export const GET = verifyAdmin(async (req) => {
     const purchasedRaw = await Goods.aggregate([
       {
         $group: {
-          _id:         "$materialType",
-          totalKg:     { $sum: "$totalKg" },
-          totalAmount: { $sum: "$totalAmount" }, // total investment
-          avgRate:     { $avg: "$perKgRate" },
-          // Weighted average rate
-          totalKgForAvg: { $sum: "$totalKg" },
+          _id:            "$materialType",
+          totalKg:        { $sum: "$totalKg" },
+          totalAmount:    { $sum: "$totalAmount" },
+          avgRate:        { $avg: "$perKgRate" },
+          totalKgForAvg:  { $sum: "$totalKg" },
           totalAmtForAvg: { $sum: "$totalAmount" },
         },
       },
     ]);
 
-    // ── 2. Total used per metal type (from completed orders) ──────
+    // ── 2. Total used per metal type ──────────────────────────────
     const usedRaw = await CompletedOrder.aggregate([
-      { $unwind: "$paymentReceive.materialUsage" },
       {
-        $group: {
-          _id:        "$paymentReceive.materialUsage.metalType",
-          totalUsed:  { $sum: "$paymentReceive.materialUsage.kgUsed" },
-          totalCost:  { $sum: "$paymentReceive.materialUsage.materialCost" },
+        $unwind: {
+          path: "$paymentReceive.materialUsage",
+          preserveNullAndEmptyArrays: false,
         },
       },
+      {
+        $group: {
+          _id:       "$paymentReceive.materialUsage.metalType",
+          totalUsed: { $sum: "$paymentReceive.materialUsage.kgUsed" },
+          totalCost: { $sum: "$paymentReceive.materialUsage.materialCost" },
+        },
+      },
+      { $match: { _id: { $ne: null } } },
     ]);
 
     // ── 3. Build lookup maps ──────────────────────────────────────
     const purchasedMap = {};
     purchasedRaw.forEach((item) => {
       purchasedMap[item._id] = {
-        purchased:   item.totalKg     || 0,
-        investment:  item.totalAmount || 0,
-        avgRate:     item.totalKg > 0
+        purchased:  item.totalKg     || 0,
+        investment: item.totalAmount || 0,
+        avgRate:    item.totalKg > 0
           ? parseFloat((item.totalAmount / item.totalKg).toFixed(2))
           : 0,
       };
@@ -54,10 +54,12 @@ export const GET = verifyAdmin(async (req) => {
 
     const usedMap = {};
     usedRaw.forEach((item) => {
-      usedMap[item._id] = {
-        used: item.totalUsed || 0,
-        cost: item.totalCost || 0,
-      };
+      if (item._id) {
+        usedMap[item._id] = {
+          used: item.totalUsed || 0,
+          cost: item.totalCost || 0,
+        };
+      }
     });
 
     // ── 4. Calculate remaining for each metal type ────────────────
@@ -68,8 +70,8 @@ export const GET = verifyAdmin(async (req) => {
       const p = purchasedMap[type] || { purchased: 0, investment: 0, avgRate: 0 };
       const u = usedMap[type]      || { used: 0, cost: 0 };
 
-      const remaining       = Math.max(0, p.purchased - u.used);
-      const remainingValue  = parseFloat((remaining * p.avgRate).toFixed(2));
+      const remaining      = Math.max(0, p.purchased - u.used);
+      const remainingValue = parseFloat((remaining * p.avgRate).toFixed(2));
 
       breakdown[type] = {
         purchased:      parseFloat(p.purchased.toFixed(3)),
@@ -77,29 +79,27 @@ export const GET = verifyAdmin(async (req) => {
         remaining:      parseFloat(remaining.toFixed(3)),
         avgRate:        p.avgRate,
         investment:     parseFloat(p.investment.toFixed(2)),
-        remainingValue: remainingValue, // current stock ka value
+        remainingValue,
       };
     });
 
     // ── 5. Grand totals ───────────────────────────────────────────
-    const totalPurchased     = METAL_TYPES.reduce((s, t) => s + breakdown[t].purchased,     0);
-    const totalUsed          = METAL_TYPES.reduce((s, t) => s + breakdown[t].used,          0);
-    const totalRemaining     = METAL_TYPES.reduce((s, t) => s + breakdown[t].remaining,     0);
-    const totalInvestment    = METAL_TYPES.reduce((s, t) => s + breakdown[t].investment,    0);
-    const totalRemainingValue= METAL_TYPES.reduce((s, t) => s + breakdown[t].remainingValue,0);
+    const totalPurchased      = METAL_TYPES.reduce((s, t) => s + breakdown[t].purchased,      0);
+    const totalUsed           = METAL_TYPES.reduce((s, t) => s + breakdown[t].used,           0);
+    const totalRemaining      = METAL_TYPES.reduce((s, t) => s + breakdown[t].remaining,      0);
+    const totalInvestment     = METAL_TYPES.reduce((s, t) => s + breakdown[t].investment,     0);
+    const totalRemainingValue = METAL_TYPES.reduce((s, t) => s + breakdown[t].remainingValue, 0);
 
-    // ── 6. Response ───────────────────────────────────────────────
-    // Backward-compatible fields + new detailed breakdown
     return new Response(JSON.stringify({
       success: true,
       data: {
-        // ── Backward compatible (existing frontend ke liye) ──────
+        // Backward compatible
         totalMS:     breakdown["MS"].remaining,
         totalGI:     breakdown["GI"].remaining,
         totalOthers: breakdown["Other"].remaining,
         totalStock:  parseFloat(totalRemaining.toFixed(3)),
 
-        // ── ✅ NEW: Detailed breakdown ───────────────────────────
+        // Detailed breakdown
         breakdown,
         summary: {
           totalPurchased:      parseFloat(totalPurchased.toFixed(3)),
@@ -110,7 +110,7 @@ export const GET = verifyAdmin(async (req) => {
         },
       },
     }), {
-      status: 200,
+      status:  200,
       headers: { "Content-Type": "application/json" },
     });
 

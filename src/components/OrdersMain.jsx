@@ -1,12 +1,5 @@
 "use client";
-// src/components/OrdersMain.jsx  (replace PendingOrders.jsx)
-//
-// Main component — sirf:
-//   1. Data fetch karna
-//   2. Tab switching
-//   3. Toast show karna
-//   4. Teen tab components render karna
-
+// src/components/OrdersMain.jsx
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence }           from "framer-motion";
 import { api, normalizeOrder, normalizeCompleted } from "./orders/orderUtils";

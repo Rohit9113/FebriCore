@@ -1,13 +1,9 @@
 // app/api/employees/auth/login/route.js
-// ✅ Rate limiting added — brute force protection
-
-import { connectDB }          from "@/lib/db";
-import Employee               from "@/app/api/employees/models/Employee";
-import bcrypt                 from "bcryptjs";
-import jwt                    from "jsonwebtoken";
-import { employeeLoginLimiter } from "@/app/api/middleware/rateLimit";
-
-const JWT_SECRET = process.env.JWT_SECRET;
+import { connectDB }                                  from "@/lib/db";
+import Employee                                       from "@/app/api/employees/models/Employee";
+import bcrypt                                         from "bcryptjs";
+import { generateAccessToken, generateRefreshToken }  from "@/app/api/middleware/auth";
+import { employeeLoginLimiter }                       from "@/app/api/middleware/rateLimit";
 
 const handler = async (req) => {
   try {
@@ -46,21 +42,21 @@ const handler = async (req) => {
       );
     }
 
-    const token = jwt.sign(
-      {
-        _id:   employee._id,
-        empId: employee.empId,
-        name:  employee.name,
-        phone: employee.phone,
-        role:  "employee",
-      },
-      JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    const tokenPayload = {
+      _id:   employee._id,
+      empId: employee.empId,
+      name:  employee.name,
+      phone: employee.phone,
+      role:  "employee",
+    };
+
+    const accessToken  = generateAccessToken(tokenPayload);
+    const refreshToken = generateRefreshToken(tokenPayload);
 
     return Response.json({
       success: true,
-      token,
+      token:        accessToken, 
+      refreshToken,
       employee: {
         _id:   employee._id,
         empId: employee.empId,
@@ -77,5 +73,4 @@ const handler = async (req) => {
   }
 };
 
-// ✅ Rate limiter wrap karo
 export const POST = employeeLoginLimiter(handler);

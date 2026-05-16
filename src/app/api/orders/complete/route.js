@@ -1,19 +1,10 @@
 // app/api/orders/complete/route.js
-//
-// ✅ FIX 1: Negative/zero weight validation — koi bhi corrupt data nahi bhej sakta
-// ✅ FIX 2: Partial → Full payment logic — pehle ki paymentHistory ka
-//           receivedAmount total mein count hoga
-// ✅ FIX 3: Stock sufficient hai ya nahi — check before completing
-
 import { connectDB }   from "@/lib/db";
 import Orders          from "../models/orders";
 import CompletedOrder  from "../models/CompletedOrder";
 import Goods           from "@/app/api/goods/model";
 import { verifyAdmin } from "@/app/api/middleware/auth";
 
-// ─────────────────────────────────────────────────────────────────
-// HELPER: Weighted average purchase rate for a metal type
-// ─────────────────────────────────────────────────────────────────
 const getAvgPurchaseRate = async (metalType) => {
   if (!metalType) return 0;
 
@@ -37,9 +28,7 @@ const getAvgPurchaseRate = async (metalType) => {
   return parseFloat((result[0].totalAmount / result[0].totalKg).toFixed(2));
 };
 
-// ─────────────────────────────────────────────────────────────────
 // PATCH  /api/orders/complete
-// ─────────────────────────────────────────────────────────────────
 export const PATCH = verifyAdmin(async (req) => {
   try {
     await connectDB();
@@ -62,8 +51,6 @@ export const PATCH = verifyAdmin(async (req) => {
       }, { status: 400 });
     }
 
-    // ✅ FIX 1: Negative/zero weight validation
-    // Pehle koi bhi negative weight bhej ke stock corrupt kar sakta tha
     for (const entry of entries) {
       const w = Number(entry.weight);
       if (entry.weight !== undefined && entry.weight !== null && entry.weight !== "") {
@@ -101,10 +88,6 @@ export const PATCH = verifyAdmin(async (req) => {
     const due      = Math.max(0, Number(dueAmount)      || 0);
     const received = Math.max(0, Number(receivedAmount) || 0);
     const total    = Number(totalAmount) || 0;
-
-    // ✅ FIX 2: Partial → Full payment
-    // Pehle ki paymentHistory ka total receivedAmount calculate karo
-    // Taaki pehle jo customer ne diya woh bhi count ho
     const previouslyReceived = (group.paymentHistory || []).reduce(
       (sum, p) => sum + (Number(p.receivedAmount) || Number(p.finalAmount) || 0),
       0
@@ -162,14 +145,11 @@ export const PATCH = verifyAdmin(async (req) => {
       materialUsage,
       totalMaterialCost,
       grossProfit,
-      // ✅ FIX 2: Pehle ka received bhi record karo
       previouslyReceived,
       totalReceivedTillNow: parseFloat((previouslyReceived + received).toFixed(2)),
     };
 
-    // ─────────────────────────────────────────────────────────────
     // CASE 1: Abhi bhi due baaki hai → Partially Completed
-    // ─────────────────────────────────────────────────────────────
     if (due > 0) {
       group.orders = group.orders.map((o) => ({
         ...(o.toObject ? o.toObject() : o),
@@ -193,26 +173,14 @@ export const PATCH = verifyAdmin(async (req) => {
         grossProfit,
       }, { status: 200 });
     }
-
-    // ─────────────────────────────────────────────────────────────
-    // CASE 2: Fully paid → CompletedOrder mein move karo
-    // ✅ FIX 2: CompletedOrder mein full payment history save karo
-    //           Taaki income/profit reports accurate rahein
-    // ─────────────────────────────────────────────────────────────
-
-    // ✅ FIX 2: Total received = pehle ka + ab ka
     const finalTotalReceived = previouslyReceived + received;
 
-    // CompletedOrder mein complete payment object save karo
     const finalPaymentReceive = {
       ...paymentReceive,
-      // Income/profit APIs finalAmount se read karte hain
-      // Isliye yahan poora received amount save karo
       finalAmount:          finalTotalReceived,
       receivedAmount:       finalTotalReceived,
       dueAmount:            0, // fully paid
       totalReceivedTillNow: finalTotalReceived,
-      // Puri payment history bhi attach karo reference ke liye
       paymentHistory:       [
         ...(group.paymentHistory || []),
         paymentReceive,
@@ -254,9 +222,7 @@ export const PATCH = verifyAdmin(async (req) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────
 // GET  /api/orders/complete → all completed orders
-// ─────────────────────────────────────────────────────────────────
 export const GET = verifyAdmin(async () => {
   try {
     await connectDB();

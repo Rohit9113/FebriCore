@@ -5,7 +5,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
 
-// ─── Salary Utils (inline mirror of salaryUtils.js) ──────────────
 const calcDaySalary = (attendanceEntry, perDaySalary, overtimeRatePerHour = 0) => {
   if (!attendanceEntry) return 0;
   const status         = typeof attendanceEntry === "string" ? attendanceEntry : (attendanceEntry?.status ?? "absent");
@@ -74,6 +73,9 @@ const getStatusCfg = (s) => STATUS_CONFIG[s] || STATUS_CONFIG.absent;
 const EXPENSE_CATEGORIES  = ["Hardware", "Diesel", "Petrol", "Transport", "Other"];
 const SUPER_ADMIN_TIMEOUT = 10 * 60 * 1000;
 const TODAY               = new Date().toISOString().split("T")[0];
+
+// ─── Attendance Pagination Config ─────────────────────────────────
+const ATTENDANCE_PER_PAGE = 8;
 
 const api = axios.create({ baseURL: "/api" });
 api.interceptors.request.use((cfg) => {
@@ -198,9 +200,8 @@ function SuperAdminPinModal({ onSuccess, onClose }) {
   );
 }
 
-// ─── ✅ Overtime Modal — Custom Amount + Hours dono options ───────
 function OvertimeModal({ employee, date, onConfirm, onClose }) {
-  const [mode,        setMode]        = useState("amount"); // "amount" | "hours"
+  const [mode,        setMode]        = useState("amount");
   const [customAmt,   setCustomAmt]   = useState("");
   const [hours,       setHours]       = useState("2");
 
@@ -749,7 +750,6 @@ function SalarySection({ employees, setEmployees, totalDue, onViewProfile, isSup
     setSelectedId(list[0]?.id || null);
   };
 
-  // ✅ overtimeAmount + overtimeHours dono support
   const toggleAttendance = async (empId, date, newStatus, superAdmin = false, otData = {}) => {
     try {
       await api.patch(`/employees/${empId}/attendance`, {
@@ -1048,11 +1048,19 @@ function EmployeeCard({ emp, stats, isSelected, isProcessing, onSelect, onViewPr
   );
 }
 
-// ─── Attendance Table ─────────────────────────────────────────────
 function AttendanceTable({ employee, filteredEntries, onToggle, readonly = false, isSuperAdmin = false }) {
   const [addDate,         setAddDate]         = useState("");
   const [confirmPending,  setConfirmPending]  = useState(null);
   const [showOTModalDate, setShowOTModalDate] = useState(null);
+  const [currentPage,     setCurrentPage]     = useState(1);
+
+  useEffect(() => { setCurrentPage(1); }, [filteredEntries.length, employee.id]);
+
+  const totalPages   = Math.ceil(filteredEntries.length / ATTENDANCE_PER_PAGE);
+  const paginatedEntries = filteredEntries.slice(
+    (currentPage - 1) * ATTENDANCE_PER_PAGE,
+    currentPage * ATTENDANCE_PER_PAGE
+  );
 
   const requestToggle = (empId, date, newStatus) => {
     if (newStatus === "overtime") { setShowOTModalDate(date); return; }
@@ -1077,6 +1085,21 @@ function AttendanceTable({ employee, filteredEntries, onToggle, readonly = false
     return "";
   };
 
+  const rowVariants = {
+    hidden: { opacity: 0, filter: "blur(6px)", y: -6 },
+    visible: (i) => ({
+      opacity: 1,
+      filter: "blur(0px)",
+      y: 0,
+      transition: {
+        delay: i * 0.05,
+        duration: 0.35,
+        ease: "easeOut",
+      },
+    }),
+    exit: { opacity: 0, filter: "blur(4px)", y: 6, transition: { duration: 0.2 } },
+  };
+
   return (
     <div>
       {(!readonly || isSuperAdmin) && (
@@ -1091,69 +1114,89 @@ function AttendanceTable({ employee, filteredEntries, onToggle, readonly = false
       {filteredEntries.length === 0 ? (
         <div className="p-10 text-center text-gray-500">Is period ka koi attendance record nahi.</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-gray-400 text-xs text-left uppercase tracking-wide bg-white/5">
-                <th className="px-5 py-3">Date</th>
-                <th className="px-5 py-3">Day</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3 text-right">Salary</th>
-                <th className="px-5 py-3 text-center">Change</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredEntries.map(([date, entry]) => {
-                const status   = getStatus(entry);
-                const markedBy = getMarkedBy(entry);
-                const isToday  = date === TODAY;
-                const canEdit  = !readonly && (isSuperAdmin || isToday);
-                const cfg      = getStatusCfg(status);
-                const earned   = getSalaryForDate(date, employee);
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="text-gray-400 text-xs text-left uppercase tracking-wide bg-white/5">
+                  <th className="px-5 py-3">Date</th>
+                  <th className="px-5 py-3">Day</th>
+                  <th className="px-5 py-3">Status</th>
+                  <th className="px-5 py-3 text-right">Salary</th>
+                  <th className="px-5 py-3 text-center">Change</th>
+                </tr>
+              </thead>
+              <tbody>
+                <AnimatePresence mode="wait">
+                  {paginatedEntries.map(([date, entry], i) => {
+                    const status   = getStatus(entry);
+                    const markedBy = getMarkedBy(entry);
+                    const isToday  = date === TODAY;
+                    const canEdit  = !readonly && (isSuperAdmin || isToday);
+                    const cfg      = getStatusCfg(status);
+                    const earned   = getSalaryForDate(date, employee);
 
-                return (
-                  <tr key={date} className={`border-t border-white/5 hover:bg-white/[0.02] ${isToday ? "ring-1 ring-inset ring-amber-400/20" : ""}`}>
-                    <td className="px-5 py-3 text-sm">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-gray-300 font-mono">{fmtDate(date)}</span>
-                        {isToday && <span className="text-[10px] bg-amber-400/20 text-amber-400 px-1.5 py-0.5 rounded-full font-bold">TODAY</span>}
-                      </div>
-                    </td>
-                    <td className="px-5 py-3 text-gray-400 text-sm">{new Date(date).toLocaleDateString("en-IN", { weekday: "short" })}</td>
-                    <td className="px-5 py-3">
-                      <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
-                        {cfg.label}{status === "overtime" ? otLabel(entry) : ""}
-                      </span>
-                      {markedBy === "auto" && <span className="ml-2 text-[10px] text-gray-500 bg-white/5 px-1.5 py-0.5 rounded">auto</span>}
-                    </td>
-                    <td className="px-5 py-3 text-right font-semibold">
-                      {earned > 0 ? <span className={cfg.text}>₹ {earned.toLocaleString()}</span> : <span className="text-gray-500">—</span>}
-                    </td>
-                    <td className="px-5 py-3">
-                      {canEdit ? (
-                        <div className="flex flex-wrap gap-1 justify-center">
-                          {["present", "half-day", "overtime", "absent"].map((s) => {
-                            const bc  = getStatusCfg(s);
-                            const ico = { present: "✓", "half-day": "½", overtime: "⏱", absent: "✗" };
-                            const lbl = { present: "P", "half-day": "½", overtime: "OT", absent: "A" };
-                            return (
-                              <button key={s} onClick={() => requestToggle(employee.id, date, s)}
-                                className={`text-xs px-2 py-1 rounded-lg transition font-medium border ${status === s ? `${bc.bg} ${bc.text} ring-1 ${bc.ring}` : "bg-white/5 border-white/10 text-gray-400 hover:text-white"}`}>
-                                {ico[s]} {lbl[s]}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-600 block text-center">—</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                    return (
+                      <motion.tr
+                        key={`${date}-${currentPage}`}
+                        custom={i}
+                        variants={rowVariants}
+                        initial="hidden"
+                        animate="visible"
+                        exit="exit"
+                        className={`border-t border-white/5 hover:bg-white/[0.02] ${isToday ? "ring-1 ring-inset ring-amber-400/20" : ""}`}
+                        style={{ willChange: "opacity, filter, transform" }}
+                      >
+                        <td className="px-5 py-3 text-sm">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-gray-300 font-mono">{fmtDate(date)}</span>
+                            {isToday && <span className="text-[10px] bg-amber-400/20 text-amber-400 px-1.5 py-0.5 rounded-full font-bold">TODAY</span>}
+                          </div>
+                        </td>
+                        <td className="px-5 py-3 text-gray-400 text-sm">{new Date(date).toLocaleDateString("en-IN", { weekday: "short" })}</td>
+                        <td className="px-5 py-3">
+                          <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
+                            {cfg.label}{status === "overtime" ? otLabel(entry) : ""}
+                          </span>
+                          {markedBy === "auto" && <span className="ml-2 text-[10px] text-gray-500 bg-white/5 px-1.5 py-0.5 rounded">auto</span>}
+                        </td>
+                        <td className="px-5 py-3 text-right font-semibold">
+                          {earned > 0 ? <span className={cfg.text}>₹ {earned.toLocaleString()}</span> : <span className="text-gray-500">—</span>}
+                        </td>
+                        <td className="px-5 py-3">
+                          {canEdit ? (
+                            <div className="flex flex-wrap gap-1 justify-center">
+                              {["present", "half-day", "overtime", "absent"].map((s) => {
+                                const bc  = getStatusCfg(s);
+                                const ico = { present: "✓", "half-day": "½", overtime: "⏱", absent: "✗" };
+                                const lbl = { present: "P", "half-day": "½", overtime: "OT", absent: "A" };
+                                return (
+                                  <button key={s} onClick={() => requestToggle(employee.id, date, s)}
+                                    className={`text-xs px-2 py-1 rounded-lg transition font-medium border ${status === s ? `${bc.bg} ${bc.text} ring-1 ${bc.ring}` : "bg-white/5 border-white/10 text-gray-400 hover:text-white"}`}>
+                                    {ico[s]} {lbl[s]}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-600 block text-center">—</span>
+                          )}
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
+                </AnimatePresence>
+              </tbody>
+            </table>
+          </div>
+
+          <div className="px-5 pb-4 pt-3 border-t border-white/5 flex items-center justify-between flex-wrap gap-2">
+            <p className="text-xs text-gray-500">
+              Showing {Math.min((currentPage - 1) * ATTENDANCE_PER_PAGE + 1, filteredEntries.length)}–{Math.min(currentPage * ATTENDANCE_PER_PAGE, filteredEntries.length)} of {filteredEntries.length} records
+            </p>
+            <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+          </div>
+        </>
       )}
 
       {/* Overtime Modal for table */}

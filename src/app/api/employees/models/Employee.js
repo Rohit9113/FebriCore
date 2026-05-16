@@ -1,16 +1,4 @@
 // app/api/employees/models/Employee.js
-//
-// ✅ UPDATE: attendance mein half-day aur overtime support add kiya
-//
-// Status types:
-//   "present"      → 1.0 × perDaySalary
-//   "absent"       → 0
-//   "auto-present" → 1.0 × perDaySalary (auto-marked)
-//   "half-day"     → 0.5 × perDaySalary  ✅ NEW
-//   "overtime"     → perDaySalary + (overtimeHours × hourlyRate × 1.5) ✅ NEW
-//
-// overtimeHours: kitne extra ghante kaam kiya (sirf overtime status pe)
-
 import mongoose from "mongoose";
 
 const AttendanceEntrySchema = new mongoose.Schema(
@@ -24,12 +12,16 @@ const AttendanceEntrySchema = new mongoose.Schema(
       type:    String,
       default: "manual",
     },
-    // ✅ NEW: overtime ke liye extra hours
     overtimeHours: {
       type:    Number,
       default: 0,
       min:     0,
-      max:     12, // max 12 extra hours reasonable hai
+      max:     12,
+    },
+    overtimeAmount: {
+      type:    Number,
+      default: 0,
+      min:     0,
     },
   },
   { _id: false }
@@ -37,19 +29,19 @@ const AttendanceEntrySchema = new mongoose.Schema(
 
 const SalaryHistorySchema = new mongoose.Schema(
   {
-    salary:    { type: Number, required: true },
-    from:      { type: String, required: true }, // "YYYY-MM-DD"
-    reason:    { type: String, default: "" },
+    salary: { type: Number, required: true },
+    from:   { type: String, required: true },
+    reason: { type: String, default: "" },
   },
   { _id: false }
 );
 
 const SalaryPaymentSchema = new mongoose.Schema(
   {
-    amount:  { type: Number, required: true },
-    paidOn:  { type: String, required: true }, // "YYYY-MM-DD"
-    note:    { type: String, default: "" },
-    dates:   [String],
+    amount: { type: Number, required: true },
+    paidOn: { type: String, required: true },
+    note:   { type: String, default: "" },
+    dates:  [String],
   },
   { _id: false }
 );
@@ -85,9 +77,6 @@ const EmployeeSchema = new mongoose.Schema(
       type:    Number,
       default: 0,
     },
-    // ✅ NEW: overtime rate — agar custom rate set karna ho
-    // Default: perDaySalary / 8 (8-hour shift based)
-    // Agar 0 ho toh automatic calculate hoga
     overtimeRatePerHour: {
       type:    Number,
       default: 0,
@@ -100,7 +89,6 @@ const EmployeeSchema = new mongoose.Schema(
       type:    String,
       default: null,
     },
-    // ✅ UPDATED: AttendanceEntrySchema use karo
     attendance: {
       type:    Map,
       of:      AttendanceEntrySchema,

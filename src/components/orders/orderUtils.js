@@ -1,9 +1,6 @@
 // src/components/orders/orderUtils.js
-// Shared utilities — teeno tab components import karte hain
-
 import axios from "axios";
 
-// ─── API ──────────────────────────────────────────────────────────
 export const api = axios.create({ baseURL: "/api" });
 api.interceptors.request.use((cfg) => {
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;

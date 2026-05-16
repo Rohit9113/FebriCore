@@ -1,23 +1,9 @@
 // app/api/orders/[id]/route.js
-//
-// ✅ NEW Feature 2: Order Edit + Cancel
-//
-// PATCH /api/orders/[id]      → Order edit karo (customer info + order items)
-// DELETE /api/orders/[id]     → Order cancel karo (permanent delete)
-//
-// Rules:
-//   - Sirf Pending ya Partially Completed orders edit/cancel ho sakte hain
-//   - Completed orders edit nahi ho sakte (wo CompletedOrder collection mein hain)
-//   - Cancel = hard delete (order history se permanently hata do)
-//   - Edit mein customer info aur individual order items dono update ho sakte hain
-
 import { connectDB }   from "@/lib/db";
 import Orders          from "@/app/api/orders/models/orders";
 import { verifyAdmin } from "@/app/api/middleware/auth";
 
-// ─────────────────────────────────────────────────────────────────
 // GET /api/orders/[id] — Single order fetch
-// ─────────────────────────────────────────────────────────────────
 export const GET = verifyAdmin(async (req, context) => {
   try {
     await connectDB();
@@ -38,19 +24,6 @@ export const GET = verifyAdmin(async (req, context) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────
-// PATCH /api/orders/[id] — Order edit karo
-//
-// Body:
-// {
-//   customer?: { name, phone, address }   ← customer info update
-//   orders?: [{                           ← order items update
-//     orderId, height, width, perKgRate,
-//     extraCharge, amount, description,
-//     metalType, itemType
-//   }]
-// }
-// ─────────────────────────────────────────────────────────────────
 export const PATCH = verifyAdmin(async (req, context) => {
   try {
     await connectDB();
@@ -67,7 +40,6 @@ export const PATCH = verifyAdmin(async (req, context) => {
       );
     }
 
-    // ✅ Sirf Pending ya Partially Completed edit ho sakta hai
     const hasNonPending = order.orders.some(
       o => o.status === "Completed"
     );
@@ -127,14 +99,6 @@ export const PATCH = verifyAdmin(async (req, context) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────
-// DELETE /api/orders/[id] — Order cancel karo
-//
-// Body: { reason?: string }  ← Optional cancel reason
-//
-// Sirf Pending orders delete ho sakte hain
-// Partially Completed nahi (customer ne pehle se pay kiya hai)
-// ─────────────────────────────────────────────────────────────────
 export const DELETE = verifyAdmin(async (req, context) => {
   try {
     await connectDB();
@@ -148,7 +112,6 @@ export const DELETE = verifyAdmin(async (req, context) => {
       );
     }
 
-    // ✅ Partially Completed cancel nahi ho sakta — customer ne pehle pay kiya hai
     const isPartiallyPaid = order.orders.some(
       o => o.status === "Partially Completed"
     );

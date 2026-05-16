@@ -1,8 +1,8 @@
 // app/api/employees/route.js
-
 import { connectDB }   from "@/lib/db";
 import Employee        from "./models/Employee";
 import { verifyAdmin } from "@/app/api/middleware/auth";
+import { getEmpStats } from "@/app/api/employees/salaryUtils";
 import bcrypt          from "bcryptjs";
 
 // ─── Helpers ─────────────────────────────────────────────────────
@@ -19,50 +19,6 @@ const generatePassword = (name, phone) => {
   return `${namePart}${phonePart}`;
 };
 
-// ✅ FIX: per-date salary helper
-const getSalaryForDate = (date, salaryHistory, perDaySalary) => {
-  if (!salaryHistory || salaryHistory.length === 0) return perDaySalary;
-  const applicable = salaryHistory
-    .filter((h) => h.from <= date)
-    .sort((a, b) => new Date(b.from) - new Date(a.from));
-  return applicable.length > 0 ? applicable[0].salary : perDaySalary;
-};
-
-// ✅ FIX: stats calculation — salary history aware
-const calcStats = (emp) => {
-  const attObj = emp.attendance instanceof Map
-    ? Object.fromEntries(emp.attendance)
-    : Object.fromEntries(Object.entries(emp.attendance || {}));
-
-  const entries = Object.entries(attObj);
-
-  const presentEntries = entries.filter(
-    ([, v]) => v.status === "present" || v.status === "auto-present"
-  );
-  const absentCount = entries.filter(([, v]) => v.status === "absent").length;
-
-  // ✅ Per-date salary — salary history aware
-  const totalEarned = presentEntries.reduce(
-    (sum, [date]) => sum + getSalaryForDate(date, emp.salaryHistory || [], emp.perDaySalary),
-    0
-  );
-
-  const paidAmount = (emp.salaryPayments || []).reduce((s, p) => s + (p.amount || 0), 0);
-  const dueAmount  = Math.max(0, totalEarned - paidAmount);
-
-  return {
-    attObj,
-    present:    presentEntries.length,
-    absent:     absentCount,
-    totalEarned: Math.round(totalEarned),
-    paidAmount:  Math.round(paidAmount),
-    dueAmount:   Math.round(dueAmount),
-  };
-};
-
-// ─────────────────────────────────────────────────────────────────
-// POST  /api/employees — Naya employee register
-// ─────────────────────────────────────────────────────────────────
 export const POST = verifyAdmin(async (req) => {
   try {
     await connectDB();
@@ -102,8 +58,6 @@ export const POST = verifyAdmin(async (req) => {
       isActive:      true,
       deactivatedOn: null,
       perDaySalary:  Number(perDaySalary),
-      // ✅ Joining salary bhi history mein add karo
-      // Taaki getSalaryForDate joining date se sahi salary return kare
       salaryHistory: [
         { salary: Number(perDaySalary), from: joinDate, reason: "Joining Salary" },
       ],
@@ -137,9 +91,7 @@ export const POST = verifyAdmin(async (req) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────
-// GET  /api/employees — Sab employees list
-// ─────────────────────────────────────────────────────────────────
+// GET  /api/employees 
 export const GET = verifyAdmin(async (req) => {
   try {
     await connectDB();
@@ -154,14 +106,21 @@ export const GET = verifyAdmin(async (req) => {
     const employees = await Employee.find(query).sort({ createdAt: -1 });
 
     const data = employees.map((emp) => {
-      const { attObj, present, absent, totalEarned, paidAmount, dueAmount } = calcStats(emp);
+      const { present, halfDay, overtime, absent, totalEarned, paidAmount, dueAmount } = getEmpStats(emp);
+
+      const attObj = emp.attendance instanceof Map
+        ? Object.fromEntries(emp.attendance)
+        : Object.fromEntries(Object.entries(emp.attendance || {}));
+
       return {
         ...emp.toObject(),
         attendance: attObj,
         stats: {
           present,
+          halfDay, 
+          overtime,
           absent,
-          totalEarned,  // ✅ salary history aware
+          totalEarned,
           paidAmount,
           dueAmount,
         },

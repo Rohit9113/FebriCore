@@ -7,7 +7,7 @@ import useProtectedRoute from "@/hooks/useProtectedRoute";
 import { useAuth } from "@/context/AuthContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import SkeletonLoader from "@/components/SkeletonLoader";
-import ThemeToggle from "@/components/ThemeToggle"; // ✅ NEW
+import ThemeToggle from "@/components/ThemeToggle";
 
 import OrdersSection    from "@/components/OrdersSection";
 import PendingOrders    from "@/components/OrdersMain";
@@ -135,7 +135,7 @@ export default function Dashboard() {
           </nav>
 
           <div className="flex-shrink-0 border-t border-[#1e2235]">
-            {/* ✅ NEW: Theme Toggle */}
+            {/* Theme Toggle */}
             <div className="px-3 pt-3">
               <ThemeToggle expanded />
             </div>
@@ -173,7 +173,6 @@ export default function Dashboard() {
               </h2>
               <div className="h-[2px] mt-2 w-16" style={{ background: accent }} />
             </div>
-            {/* ✅ Mobile mein header mein toggle */}
             <div className="lg:hidden">
               <ThemeToggle />
             </div>

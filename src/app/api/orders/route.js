@@ -1,20 +1,9 @@
 // app/api/orders/route.js
-//
-// ✅ FIX: lastOrderId calculation galat tha
-//   Pehle: existingCustomer.orders.at(-1)?.orderId
-//   Bug: Agar orders sorted na hon by orderId toh last element
-//        sabse bada nahi hoga — duplicate orderIds possible the
-//   Ab: Math.max() se sab orderIds mein se sabse bada lo
-//
-// ✅ FIX: Same phone pe alag customers mix hone ki warning
-
 import { connectDB }   from "@/lib/db";
 import Orders          from "./models/orders";
 import { verifyAdmin } from "@/app/api/middleware/auth";
 
-// ─────────────────────────────────────────────────────────────────
-// POST  /api/orders — naya order create karo
-// ─────────────────────────────────────────────────────────────────
+// POST  /api/orders
 export const POST = verifyAdmin(async (req) => {
   try {
     await connectDB();
@@ -30,7 +19,6 @@ export const POST = verifyAdmin(async (req) => {
       }), { status: 400 });
     }
 
-    // ✅ Basic customer validation
     if (!customer?.name) {
       return new Response(JSON.stringify({
         success: false,
@@ -45,18 +33,12 @@ export const POST = verifyAdmin(async (req) => {
       }), { status: 400 });
     }
 
-    // Existing customer check (same phone)
     let existingCustomer = null;
     if (customer?.phone) {
       existingCustomer = await Orders.findOne({
         "customer.phone": customer.phone,
       });
     }
-
-    // ✅ FIX: Math.max() se sabse bada orderId lo
-    // Pehle: existingCustomer.orders.at(-1)?.orderId
-    // Bug: Array ka last element necessarily largest nahi hota
-    // Ab: Saare orderIds mein se max lo — duplicate impossible
     const lastOrderId = existingCustomer
       ? Math.max(0, ...existingCustomer.orders.map((o) => o.orderId || 0))
       : 0;
@@ -65,7 +47,7 @@ export const POST = verifyAdmin(async (req) => {
       ...o,
       status:    "Pending",
       orderType,
-      orderId:   lastOrderId + (i + 1), // ✅ Always unique — max + 1, 2, 3...
+      orderId:   lastOrderId + (i + 1), 
     }));
 
     let record;
@@ -95,9 +77,7 @@ export const POST = verifyAdmin(async (req) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────
 // GET  /api/orders — pending + partially completed orders
-// ─────────────────────────────────────────────────────────────────
 export const GET = verifyAdmin(async () => {
   try {
     await connectDB();

@@ -1,12 +1,9 @@
 "use client";
 // src/components/orders/DuesTab.jsx
-// Sirf "Partially Completed" orders
-// Simple payment modal — sirf date + amount
-
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api, fmtDate, fmtAmt } from "./orderUtils";
-import { buildWALink, buildDuePaymentMessage } from "./whatsappUtils"; // ✅ FIX 31
+import { buildWALink, buildDuePaymentMessage } from "./whatsappUtils";
 
 const ITEMS_PER_PAGE = 3;
 
@@ -16,11 +13,15 @@ function DueCard({ order, onPay }) {
 
   const paymentHistory  = order.paymentHistory || [];
   const latestPayment   = paymentHistory.at(-1) || order.lastPayment;
-  const totalSaleAmount = Number(latestPayment?.totalAmount) || 0;
-  const currentDue      = Number(latestPayment?.dueAmount)   || 0;
-  const totalReceived   = paymentHistory.reduce(
+  const firstPayment    = paymentHistory[0] || order.lastPayment;
+  const currentDue    = Number(latestPayment?.dueAmount) || 0;
+  const totalReceived = paymentHistory.reduce(
     (s, p) => s + (Number(p.finalAmount) || Number(p.receivedAmount) || 0), 0
   );
+  const totalSaleAmount = Number(firstPayment?.totalAmount) > 0
+    ? Number(firstPayment.totalAmount)
+    : totalReceived + currentDue;
+
   const progressPct = totalSaleAmount > 0
     ? Math.min(100, Math.round((totalReceived / totalSaleAmount) * 100))
     : 0;
@@ -151,15 +152,18 @@ function DuePaymentModal({ order, onClose, onSuccess, showToast }) {
   const [amount,     setAmount]     = useState("");
   const [date,       setDate]       = useState(new Date().toISOString().split("T")[0]);
   const [submitting, setSubmitting] = useState(false);
-  const [waLink,     setWaLink]     = useState(null); // ✅ FIX 31: success pe WA link store
+  const [waLink,     setWaLink]     = useState(null);
 
   const paymentHistory  = order.paymentHistory || [];
   const latestPayment   = paymentHistory.at(-1) || order.lastPayment;
+  const firstPayment    = paymentHistory[0]     || order.lastPayment;
   const currentDue      = Number(latestPayment?.dueAmount) || 0;
-  const totalSale       = Number(latestPayment?.totalAmount) || 0;
   const totalReceived   = paymentHistory.reduce(
     (s, p) => s + (Number(p.finalAmount) || Number(p.receivedAmount) || 0), 0
   );
+  const totalSale = Number(firstPayment?.totalAmount) > 0
+    ? Number(firstPayment.totalAmount)
+    : totalReceived + currentDue; // fallback
 
   const amountNum    = Number(amount) || 0;
   const newDue       = Math.max(0, currentDue - amountNum);
@@ -180,7 +184,6 @@ function DuePaymentModal({ order, onClose, onSuccess, showToast }) {
       if (data.success) {
         showToast(data.message);
 
-        // ✅ FIX 31: WA link banao success pe
         const newTotalReceived = totalReceived + amountNum;
         const newDueAfter      = Math.max(0, currentDue - amountNum);
         const link = buildWALink(
@@ -195,7 +198,6 @@ function DuePaymentModal({ order, onClose, onSuccess, showToast }) {
         );
         setWaLink(link);
 
-        // onSuccess thoda delay se call karo taaki WA button dikh sake
         setTimeout(() => onSuccess(data.movedToCompleted), 2500);
       }
     } catch (err) {
@@ -328,7 +330,6 @@ function DuePaymentModal({ order, onClose, onSuccess, showToast }) {
         <div className="flex-shrink-0 px-5 py-4 flex flex-col gap-2"
           style={{ borderTop: "1px solid rgba(255,255,255,0.08)", background: "#0d0f1e" }}>
 
-          {/* ✅ FIX 31: WA button — payment save hone ke baad dikhta hai */}
           <AnimatePresence>
             {waLink && (
               <motion.a

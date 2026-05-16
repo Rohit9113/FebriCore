@@ -1,17 +1,8 @@
 // app/api/employees/[id]/salary/pay/route.js
-
-import { connectDB }   from "@/lib/db";
-import Employee        from "@/app/api/employees/models/Employee";
-import { verifyAdmin } from "@/app/api/middleware/auth";
-
-// ─── Helper ───────────────────────────────────────────────────────
-const getSalaryForDate = (date, salaryHistory, perDaySalary) => {
-  if (!salaryHistory || salaryHistory.length === 0) return perDaySalary;
-  const applicable = salaryHistory
-    .filter((h) => h.from <= date)
-    .sort((a, b) => new Date(b.from) - new Date(a.from));
-  return applicable.length > 0 ? applicable[0].salary : perDaySalary;
-};
+import { connectDB }                        from "@/lib/db";
+import Employee                             from "@/app/api/employees/models/Employee";
+import { verifyAdmin }                      from "@/app/api/middleware/auth";
+import { getSalaryForDate, getEmpStats }    from "@/app/api/employees/salaryUtils";
 
 const getAttObj = (emp) =>
   emp.attendance instanceof Map
@@ -37,20 +28,12 @@ export const PATCH = verifyAdmin(async (req, context) => {
 
     const employee = await Employee.findById(id);
     if (!employee) {
-      return Response.json({ success: false, error: "Employee nahi mila" }, { status: 404 });
+      return Response.json(
+        { success: false, error: "Employee nahi mila" },
+        { status: 404 }
+      );
     }
-
-    const attObj = getAttObj(employee);
-
-    // ✅ FIX: per-date salary
-    const presentDates = Object.entries(attObj)
-      .filter(([, v]) => v.status === "present" || v.status === "auto-present")
-      .map(([date]) => date);
-
-    const totalEarned = presentDates.reduce(
-      (sum, date) => sum + getSalaryForDate(date, employee.salaryHistory, employee.perDaySalary),
-      0
-    );
+    const { totalEarned } = getEmpStats(employee);
 
     const totalAlreadyPaid = (employee.salaryPayments || [])
       .reduce((sum, p) => sum + (p.amount || 0), 0);
@@ -93,7 +76,6 @@ export const PATCH = verifyAdmin(async (req, context) => {
         totalEarned:   Math.round(totalEarned),
         totalPaid:     Math.round(newTotalPaid),
         remainingDue:  Math.round(Math.max(0, newDue)),
-        presentDays:   presentDates.length,
         paymentsCount: employee.salaryPayments.length,
       },
     }, { status: 200 });
@@ -112,32 +94,54 @@ export const GET = verifyAdmin(async (req, context) => {
     const { id } = await context.params;
 
     const { searchParams } = new URL(req.url);
-    const month = searchParams.get("month");
+    const month = searchParams.get("month"); // "YYYY-MM"
 
     const employee = await Employee.findById(id);
     if (!employee) {
-      return Response.json({ success: false, error: "Employee nahi mila" }, { status: 404 });
+      return Response.json(
+        { success: false, error: "Employee nahi mila" },
+        { status: 404 }
+      );
     }
 
     const attObj = getAttObj(employee);
 
+    // Month filter apply karo
     const filteredEntries = Object.entries(attObj).filter(
       ([date]) => (month ? date.startsWith(month) : true)
     );
 
     const presentDays = filteredEntries
-      .filter(([, v]) => v.status === "present" || v.status === "auto-present")
+      .filter(([, v]) => {
+        const s = typeof v === "string" ? v : v?.status;
+        return s === "present" || s === "auto-present";
+      })
+      .map(([date]) => date)
+      .sort((a, b) => new Date(b) - new Date(a));
+
+    const halfDayDates = filteredEntries
+      .filter(([, v]) => (typeof v === "string" ? v : v?.status) === "half-day")
+      .map(([date]) => date)
+      .sort((a, b) => new Date(b) - new Date(a));
+
+    const overtimeDates = filteredEntries
+      .filter(([, v]) => (typeof v === "string" ? v : v?.status) === "overtime")
       .map(([date]) => date)
       .sort((a, b) => new Date(b) - new Date(a));
 
     const absentDays = filteredEntries
-      .filter(([, v]) => v.status === "absent")
+      .filter(([, v]) => (typeof v === "string" ? v : v?.status) === "absent")
       .map(([date]) => date)
       .sort((a, b) => new Date(b) - new Date(a));
+    const allFilteredDates = filteredEntries
+      .filter(([, v]) => {
+        const s = typeof v === "string" ? v : v?.status;
+        return s !== "absent";
+      })
+      .map(([date]) => date);
 
-    // ✅ FIX: per-date salary
-    const totalEarned = presentDays.reduce(
-      (sum, date) => sum + getSalaryForDate(date, employee.salaryHistory, employee.perDaySalary),
+    const totalEarned = allFilteredDates.reduce(
+      (sum, date) => sum + getSalaryForDate(date, employee),
       0
     );
 
@@ -155,13 +159,17 @@ export const GET = verifyAdmin(async (req, context) => {
         perDaySalary: employee.perDaySalary,
         summary: {
           presentDays:  presentDays.length,
+          halfDayDays:  halfDayDates.length,
+          overtimeDays: overtimeDates.length,
           absentDays:   absentDays.length,
           totalEarned:  Math.round(totalEarned),
           totalPaid:    Math.round(totalPaid),
           totalDue:     Math.round(totalDue),
         },
-        presentDatesList: presentDays,
-        absentDatesList:  absentDays,
+        presentDatesList:  presentDays,
+        halfDayDatesList:  halfDayDates,
+        overtimeDatesList: overtimeDates,
+        absentDatesList:   absentDays,
         payments: [...filteredPmts].reverse(),
       },
     }, { status: 200 });

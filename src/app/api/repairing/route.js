@@ -9,10 +9,7 @@ const getToday = () => {
   return new Date().toISOString().substring(0, 10);
 };
 
-// ─────────────────────────────────────────────
 // POST /api/repairing
-// Simple entry: amount + description
-// ─────────────────────────────────────────────
 export const POST = verifyAdmin(async (req) => {
   try {
     await connectDB();
@@ -50,10 +47,7 @@ export const POST = verifyAdmin(async (req) => {
   }
 });
 
-// ─────────────────────────────────────────────
 // GET /api/repairing
-// All repairing entries (latest first)
-// ─────────────────────────────────────────────
 export const GET = verifyAdmin(async () => {
   try {
     await connectDB();

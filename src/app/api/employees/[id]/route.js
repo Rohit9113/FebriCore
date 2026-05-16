@@ -1,17 +1,8 @@
 // app/api/employees/[id]/route.js
-
 import { connectDB }   from "@/lib/db";
 import Employee        from "@/app/api/employees/models/Employee";
 import { verifyAdmin } from "@/app/api/middleware/auth";
-
-// ─── Helper ───────────────────────────────────────────────────────
-const getSalaryForDate = (date, salaryHistory, perDaySalary) => {
-  if (!salaryHistory || salaryHistory.length === 0) return perDaySalary;
-  const applicable = salaryHistory
-    .filter((h) => h.from <= date)
-    .sort((a, b) => new Date(b.from) - new Date(a.from));
-  return applicable.length > 0 ? applicable[0].salary : perDaySalary;
-};
+import { getEmpStats } from "@/app/api/employees/salaryUtils";
 
 // ─────────────────────────────────────────────────────────────────
 // GET  /api/employees/[id]
@@ -23,28 +14,16 @@ export const GET = verifyAdmin(async (req, context) => {
 
     const emp = await Employee.findById(id);
     if (!emp) {
-      return Response.json({ success: false, error: "Employee nahi mila" }, { status: 404 });
+      return Response.json(
+        { success: false, error: "Employee nahi mila" },
+        { status: 404 }
+      );
     }
 
     const attendanceObj = emp.attendance instanceof Map
       ? Object.fromEntries(emp.attendance)
       : Object.fromEntries(Object.entries(emp.attendance || {}));
-
-    const entries = Object.entries(attendanceObj);
-
-    const presentEntries = entries.filter(
-      ([, v]) => v.status === "present" || v.status === "auto-present"
-    );
-    const absentCount = entries.filter(([, v]) => v.status === "absent").length;
-
-    // ✅ FIX: per-date salary
-    const totalEarned = presentEntries.reduce(
-      (sum, [date]) => sum + getSalaryForDate(date, emp.salaryHistory, emp.perDaySalary),
-      0
-    );
-
-    const totalPaid = (emp.salaryPayments || []).reduce((s, p) => s + (p.amount || 0), 0);
-    const dueAmount = Math.max(0, totalEarned - totalPaid);
+    const { present, halfDay, overtime, absent, totalEarned, paidAmount, dueAmount } = getEmpStats(emp);
 
     return Response.json({
       success: true,
@@ -52,13 +31,15 @@ export const GET = verifyAdmin(async (req, context) => {
         ...emp.toObject(),
         attendance: attendanceObj,
         stats: {
-          present:     presentEntries.length,
-          absent:      absentCount,
-          totalEarned: Math.round(totalEarned),
-          paidAmount:  Math.round(totalPaid),
-          dueAmount:   Math.round(dueAmount),
-          paidDays:    0,
-          dueDays:     0,
+          present,
+          halfDay,
+          overtime,
+          absent,
+          totalEarned,
+          paidAmount,
+          dueAmount,
+          paidDays: 0,
+          dueDays:  0,
         },
       },
     }, { status: 200 });
@@ -68,10 +49,7 @@ export const GET = verifyAdmin(async (req, context) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────
 // PATCH  /api/employees/[id]
-// Update: name, phone, address
-// ─────────────────────────────────────────────────────────────────
 export const PATCH = verifyAdmin(async (req, context) => {
   try {
     await connectDB();
@@ -107,7 +85,10 @@ export const PATCH = verifyAdmin(async (req, context) => {
     );
 
     if (!updated) {
-      return Response.json({ success: false, error: "Employee nahi mila" }, { status: 404 });
+      return Response.json(
+        { success: false, error: "Employee nahi mila" },
+        { status: 404 }
+      );
     }
 
     return Response.json({

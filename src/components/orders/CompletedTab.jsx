@@ -1,11 +1,9 @@
 "use client";
 // src/components/orders/CompletedTab.jsx
-// Sirf completed orders — read only view
-
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { fmtDate, fmtAmt, groupOrders } from "./orderUtils";
-import { buildWALink, buildCompletedMessage } from "./whatsappUtils"; // ✅ FIX 31
+import { buildWALink, buildCompletedMessage } from "./whatsappUtils";
 
 const ITEMS_PER_PAGE = 3;
 
@@ -75,7 +73,8 @@ function CompletedCard({ order }) {
         </div>
 
         {/* Payment summary */}
-        {payment?.totalAmount && (
+        {/* Payment summary — ✅ FIX 6: !== undefined use karo, 0 bhi valid amount hai */}
+        {payment?.totalAmount !== undefined && (
           <div className="flex gap-2 flex-wrap">
             <div className="flex-1 min-w-0 rounded-xl px-3 py-2 text-center"
               style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)" }}>
@@ -89,6 +88,7 @@ function CompletedCard({ order }) {
                 {fmtAmt(payment.finalAmount || payment.receivedAmount)}
               </p>
             </div>
+            {/* ✅ FIX 6: grossProfit !== undefined — 0 profit bhi dikhao */}
             {payment.grossProfit !== undefined && (
               <div className="flex-1 min-w-0 rounded-xl px-3 py-2 text-center"
                 style={payment.grossProfit >= 0

@@ -1,9 +1,4 @@
 // app/api/dashboard/income/route.js
-//
-// ✅ FIX: Repairing income ab include hoti hai
-// Pehle sirf CompletedOrders se income aati thi
-// Ab Repairing entries bhi income mein count hoti hain
-
 import { connectDB }   from "@/lib/db";
 import CompletedOrder  from "@/app/api/orders/models/CompletedOrder";
 import Repairing       from "@/app/api/repairing/models/Repairing"; // ✅ NEW
@@ -16,7 +11,6 @@ export const GET = verifyAdmin(async (req) => {
     const { searchParams } = new URL(req.url);
     const view  = searchParams.get("view")  || "monthly";
 
-    // ✅ FIX: parseInt with validation — NaN se bachao
     const yearParam  = parseInt(searchParams.get("year"));
     const yearsParam = parseInt(searchParams.get("years"));
     const year  = !isNaN(yearParam)  ? yearParam  : new Date().getFullYear();
@@ -26,10 +20,9 @@ export const GET = verifyAdmin(async (req) => {
       ? buildMonthlyBuckets(year)
       : buildYearlyBuckets(years);
 
-    // ✅ FIX: Dono sources fetch karo parallel mein
     const [orders, repairingEntries] = await Promise.all([
       CompletedOrder.find({}).lean(),
-      Repairing.find({}).lean(),       // ✅ NEW
+      Repairing.find({}).lean(),
     ]);
 
     // ── Orders normalize karo ─────────────────────────────────────
@@ -45,14 +38,12 @@ export const GET = verifyAdmin(async (req) => {
       return { date, totalAmount, receivedAmount, dueAmount, source: "order" };
     });
 
-    // ✅ NEW: Repairing entries normalize karo
-    // Repairing income = received amount (koi due nahi hota)
     const repairingItems = repairingEntries.map((r) => ({
       date:            r.date || toDateOnly(r.createdAt),
       totalAmount:     Number(r.amount || 0),
-      receivedAmount:  Number(r.amount || 0), // repairing mein full payment hoti hai
+      receivedAmount:  Number(r.amount || 0),
       dueAmount:       0,
-      source:          "repairing", // ✅ source track karo
+      source:          "repairing",
     }));
 
     // ── Dono sources combine karo ─────────────────────────────────
@@ -63,7 +54,7 @@ export const GET = verifyAdmin(async (req) => {
     const receivedAmount  = [];
     const dueAmount       = [];
     const orderCount      = [];
-    const repairingIncome = []; // ✅ NEW: alag bhi track karo
+    const repairingIncome = [];
 
     buckets.forEach(({ start, end }) => {
       const filtered          = allItems.filter((i) => i.date >= start && i.date <= end);
@@ -73,7 +64,7 @@ export const GET = verifyAdmin(async (req) => {
       receivedAmount.push(filtered.reduce((s, i) => s + i.receivedAmount, 0));
       dueAmount.push(     filtered.reduce((s, i) => s + i.dueAmount,      0));
       orderCount.push(    filtered.length);
-      repairingIncome.push(filteredRepairing.reduce((s, i) => s + i.totalAmount, 0)); // ✅
+      repairingIncome.push(filteredRepairing.reduce((s, i) => s + i.totalAmount, 0));
     });
 
     // ── Summary ───────────────────────────────────────────────────
@@ -81,7 +72,7 @@ export const GET = verifyAdmin(async (req) => {
     const totalReceived       = receivedAmount.reduce((a, b) => a + b, 0);
     const totalDue            = dueAmount.reduce((a, b) => a + b, 0);
     const totalOrders         = orderCount.reduce((a, b) => a + b, 0);
-    const totalRepairingIncome= repairingIncome.reduce((a, b) => a + b, 0); // ✅
+    const totalRepairingIncome= repairingIncome.reduce((a, b) => a + b, 0);
     const avgOrderValue       = totalOrders > 0 ? Math.round(totalIncome / totalOrders) : 0;
 
     const maxVal     = Math.max(...income);
@@ -100,7 +91,7 @@ export const GET = verifyAdmin(async (req) => {
         receivedAmount,
         dueAmount,
         orderCount,
-        repairingIncome, // ✅ NEW: frontend chart mein use kar sakte ho
+        repairingIncome,
         summary: {
           totalIncome,
           totalReceived,
@@ -108,8 +99,7 @@ export const GET = verifyAdmin(async (req) => {
           totalOrders,
           avgOrderValue,
           bestPeriod,
-          totalRepairingIncome, // ✅ NEW
-          // Breakdown for frontend
+          totalRepairingIncome,
           orderIncome:     totalIncome - totalRepairingIncome,
           repairingIncome: totalRepairingIncome,
         },

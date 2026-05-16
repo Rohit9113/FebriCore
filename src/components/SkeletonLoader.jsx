@@ -1,29 +1,7 @@
 "use client";
 // src/components/SkeletonLoader.jsx
-//
-// ✅ FIX 28: Loading Skeletons — spinner ki jagah proper placeholders
-//
-// Usage:
-//   <SkeletonLoader type="orders" />       → OrdersSection
-//   <SkeletonLoader type="income" />       → IncomeSection
-//   <SkeletonLoader type="profit" />       → profitSection
-//   <SkeletonLoader type="stock" />        → goodsInStock
-//   <SkeletonLoader type="pending" />      → OrdersMain (tabs)
-//   <SkeletonLoader type="expense" />      → AllExpenseSummery
-//   <SkeletonLoader type="repairing" />    → RepairingSection
-//   <SkeletonLoader type="employees" />    → Employee list
-//   <SkeletonLoader type="dashboard" />    → Generic dashboard stats
-//
-// Standalone primitives bhi export hain:
-//   <Shimmer />            → base shimmer div
-//   <SkeletonCard />       → stat card skeleton
-//   <SkeletonRow />        → table row skeleton
-//   <SkeletonChart />      → chart area skeleton
-
 import React from "react";
 
-// ─── Base Shimmer ─────────────────────────────────────────────────
-// Sab skeletons isi base pe hain — shimmer animation CSS se
 export function Shimmer({ className = "", style = {}, rounded = "rounded-xl" }) {
   return (
     <div

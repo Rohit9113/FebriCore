@@ -1,18 +1,4 @@
 // app/api/employees/me/change-password/route.js
-//
-// ✅ NEW: Employee apna password khud change kar sakta hai
-//
-// Flow:
-//   1. Employee apna current password enter karta hai (verify)
-//   2. Naya password enter karta hai (min 6 chars)
-//   3. Confirm password match check
-//   4. Hash karke save karo
-//
-// Security:
-//   - verifyEmployee middleware — sirf logged in employee apna password change kar sakta hai
-//   - Current password verify hota hai pehle — unauthorized change impossible
-//   - Naya password minimum 6 characters
-
 import { connectDB }      from "@/lib/db";
 import Employee           from "@/app/api/employees/models/Employee";
 import { verifyEmployee } from "@/app/api/middleware/auth";

@@ -1,23 +1,8 @@
 // app/api/repairing/[id]/route.js
-//
-// ✅ NEW Feature 14: Repairing Entry Edit + Delete
-//
-// PATCH  /api/repairing/[id] — Amount ya description edit karo
-// DELETE /api/repairing/[id] — Entry permanently delete karo
-
 import { connectDB }   from "@/lib/db";
 import Repairing       from "@/app/api/repairing/models/Repairing";
 import { verifyAdmin } from "@/app/api/middleware/auth";
 
-// ─────────────────────────────────────────────────────────────────
-// PATCH /api/repairing/[id] — Edit entry
-//
-// Body: { amount?, description?, date? }
-// Rules:
-//   - amount > 0 hona chahiye
-//   - description optional hai
-//   - date format YYYY-MM-DD
-// ─────────────────────────────────────────────────────────────────
 export const PATCH = verifyAdmin(async (req, context) => {
   try {
     await connectDB();
@@ -26,7 +11,6 @@ export const PATCH = verifyAdmin(async (req, context) => {
     const body = await req.json();
     const { amount, description, date } = body;
 
-    // Kuch toh update karo
     if (amount === undefined && description === undefined && date === undefined) {
       return Response.json(
         { success: false, error: "Koi bhi update field nahi mila — amount, description ya date bhejo" },
@@ -34,7 +18,6 @@ export const PATCH = verifyAdmin(async (req, context) => {
       );
     }
 
-    // Amount validation
     if (amount !== undefined) {
       const amt = Number(amount);
       if (isNaN(amt) || amt <= 0) {

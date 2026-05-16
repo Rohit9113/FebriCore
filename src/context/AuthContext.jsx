@@ -1,76 +1,155 @@
 // src/context/AuthContext.jsx
 "use client";
-import { createContext, useContext, useEffect, useState } from "react";
-import { useRouter } from "next/navigation"; // ✅ FIX BUG 5: router import
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import axios         from "axios";
 
 const AuthContext = createContext();
+
 const isTokenExpired = (token) => {
   try {
-    // JWT format: header.payload.signature
     const payload = token.split(".")[1];
     if (!payload) return true;
-
-    // Base64 decode
-    const decoded = JSON.parse(atob(payload));
-
-    // exp = expiry timestamp in seconds
+    const decoded      = JSON.parse(atob(payload));
     if (!decoded.exp) return false;
-
-    // Current time seconds mein
     const nowInSeconds = Math.floor(Date.now() / 1000);
-
-    // Agar current time exp se zyada hai toh expired
     return nowInSeconds >= decoded.exp;
   } catch {
-    // Decode fail hone pe invalid token maano
     return true;
   }
+};
+
+// ── localStorage keys ─────────────────────────────────────────────
+const ADMIN_KEYS = ["token", "refreshToken", "role", "admin"];
+const _clearAdminStorage = () => {
+  ADMIN_KEYS.forEach((k) => localStorage.removeItem(k));
 };
 
 export function AuthProvider({ children }) {
   const [admin,   setAdmin]   = useState(null);
   const [loading, setLoading] = useState(true);
-  const router                = useRouter(); // ✅ FIX BUG 5: router use karo
+  const router                = useRouter();
 
+  // ── Logout ────────────────────────────────────────────────────
+  const logout = useCallback(() => {
+    _clearAdminStorage();
+    setAdmin(null);
+    router.replace("/login");
+  }, [router]);
+
+  // ── Startup: token verify + refresh if needed ─────────────────
   useEffect(() => {
-    const token       = localStorage.getItem("token");
-    const role        = localStorage.getItem("role");
-    const storedAdmin = localStorage.getItem("admin");
+    const initialize = async () => {
+      const token        = localStorage.getItem("token");
+      const refreshToken = localStorage.getItem("refreshToken");
+      const role         = localStorage.getItem("role");
+      const storedAdmin  = localStorage.getItem("admin");
 
-    if (token && role && storedAdmin) {
-      if (isTokenExpired(token)) {
-        // Token expire ho gaya — silently clear karo
-        // ✅ FIX 30: console.log hata diya — production mein nahi chahiye
-        ["token", "role", "admin"].forEach((k) => localStorage.removeItem(k));
+      // Koi token hi nahi → clear state, useProtectedRoute redirect karega
+      if (!token || !role || !storedAdmin) {
         setLoading(false);
         return;
       }
 
-      try {
-        setAdmin({ token, role, ...JSON.parse(storedAdmin) });
-      } catch {
-        // Corrupted data — clear karo
-        ["token", "role", "admin"].forEach((k) => localStorage.removeItem(k));
+      // ── Case 1: Token valid hai → seedha set karo ──────────────
+      if (!isTokenExpired(token)) {
+        try {
+          setAdmin({ token, refreshToken, role, ...JSON.parse(storedAdmin) });
+        } catch {
+          _clearAdminStorage();
+        }
+        setLoading(false);
+        return;
       }
-    }
-    setLoading(false);
+
+      // ── Case 2: Access token expired ───────────────────────────
+      // Refresh token nahi → clear karo, redirect hoga
+      if (!refreshToken) {
+        _clearAdminStorage();
+        setLoading(false);
+        return;
+      }
+      try {
+        const { data } = await axios.post("/api/auth/refresh", { refreshToken });
+
+        if (data.success && data.accessToken) {
+          localStorage.setItem("token", data.accessToken);
+          const parsed  = JSON.parse(storedAdmin);
+          const updated = { ...parsed, token: data.accessToken, refreshToken, role };
+          localStorage.setItem("admin", JSON.stringify(updated));
+          setAdmin(updated);
+        } else {
+          // Unexpected response → clear
+          _clearAdminStorage();
+        }
+
+      } catch (err) {
+        _clearAdminStorage();
+      }
+
+      setLoading(false);
+    };
+
+    initialize();
   }, []);
 
-  const login = (data) => {
-    localStorage.setItem("token", data.token);
-    localStorage.setItem("role",  data.role || "SuperAdmin");
-    localStorage.setItem("admin", JSON.stringify(data));
+  // ── Login: dono tokens store karo ────────────────────────────
+  const login = useCallback((data) => {
+    localStorage.setItem("token",        data.token);
+    localStorage.setItem("refreshToken", data.refreshToken || "");
+    localStorage.setItem("role",         data.role || "SuperAdmin");
+    localStorage.setItem("admin",        JSON.stringify(data));
     setAdmin(data);
-  };
-  const logout = () => {
-    // Sirf admin keys hatao — emp_token etc. safe rahega
-    ["token", "role", "admin"].forEach((k) => localStorage.removeItem(k));
-    setAdmin(null);
-    router.replace("/login"); // ✅ FIX: No full page reload
-  };
+  }, []);
+
+  const refreshAccessToken = useCallback(async () => {
+    const storedRefresh = localStorage.getItem("refreshToken");
+
+    if (!storedRefresh) {
+      logout();
+      return null;
+    }
+
+    try {
+      const { data } = await axios.post("/api/auth/refresh", {
+        refreshToken: storedRefresh,
+      });
+
+      if (data.success && data.accessToken) {
+        localStorage.setItem("token", data.accessToken);
+        setAdmin((prev) => {
+          if (!prev) return prev;
+          const updated = { ...prev, token: data.accessToken };
+          localStorage.setItem("admin", JSON.stringify(updated));
+          return updated;
+        });
+        return data.accessToken;
+      }
+
+      logout();
+      return null;
+
+    } catch (err) {
+      const code = err?.response?.data?.code;
+      if (
+        code === "REFRESH_EXPIRED" ||
+        code === "REFRESH_INVALID" ||
+        code === "USER_NOT_FOUND"
+      ) {
+        logout();
+      }
+      return null;
+    }
+  }, [logout]);
 
   return (
-    <AuthContext.Provider value={{ admin, loading, login, logout }}>
+    <AuthContext.Provider value={{
+      admin,
+      loading,
+      login,
+      logout,
+      refreshAccessToken,
+    }}>
       {children}
     </AuthContext.Provider>
   );

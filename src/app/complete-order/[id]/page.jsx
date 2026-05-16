@@ -10,10 +10,10 @@ export default function CompleteOrderPage() {
 
   const [order,      setOrder]      = useState(null);
   const [received,   setReceived]   = useState("");
-  const [loading,    setLoading]    = useState(true);   // ✅ page load
-  const [submitting, setSubmitting] = useState(false);  // ✅ FIX BUG 9: submit state
-  const [error,      setError]      = useState("");     // ✅ FIX BUG 8: error state
-  const [fetchError, setFetchError] = useState("");     // ✅ FIX BUG 8: fetch error
+  const [loading,    setLoading]    = useState(true);
+  const [submitting, setSubmitting] = useState(false); 
+  const [error,      setError]      = useState("");
+  const [fetchError, setFetchError] = useState("");
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -136,7 +136,6 @@ export default function CompleteOrderPage() {
         />
       </div>
 
-      {/* ✅ FIX BUG 8: Submit error message */}
       {error && (
         <div className="mt-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
           <p className="text-red-400 text-sm">⚠️ {error}</p>

@@ -1,20 +1,4 @@
 /* src/app/globals.css
-**
-** ✅ NEW: Dark + Light theme support via CSS variables
-**
-** Kaise kaam karta hai:
-**   - data-theme="dark"  → dark variables active
-**   - data-theme="light" → light variables active
-**   - Default: dark (server-side render ke liye bhi safe)
-**
-** Component migration guide:
-**   Hardcoded:  background: "#0d0f1e"
-**   Migrated:   background: var(--bg-primary)
-**
-**   Hardcoded:  color: "#ffffff"
-**   Migrated:   color: var(--text-primary)
-*/
-
 @import "tailwindcss";
 
 /* ─── Dark Theme (default) ─────────────────────────────────────── */

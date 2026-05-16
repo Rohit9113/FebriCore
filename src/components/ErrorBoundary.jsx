@@ -1,25 +1,4 @@
 "use client";
-// src/components/ErrorBoundary.jsx
-//
-// ✅ FIX 27: React Error Boundary
-//
-// Problem pehle:
-//   Agar koi bhi section component (OrdersSection, IncomeSection, etc.)
-//   runtime error throw kare toh poora dashboard blank ho jaata tha
-//   User ko kuch nahi dikhta — na error, na koi option
-//
-// Solution:
-//   ErrorBoundary class component — React ka official pattern
-//   - Sirf wahi section crash dikhta hai jo actually toot a hai
-//   - Baaki sab sections normal kaam karte rehte hain
-//   - "Dobara Try Karo" button se sirf wahi component reset hota hai
-//   - Error details dev mode mein dikhte hain
-//
-// Usage:
-//   <ErrorBoundary label="Income Section">
-//     <IncomeSection />
-//   </ErrorBoundary>
-
 import React from "react";
 
 export default class ErrorBoundary extends React.Component {
@@ -33,14 +12,11 @@ export default class ErrorBoundary extends React.Component {
     };
   }
 
-  // ── Error capture ─────────────────────────────────────────────
   static getDerivedStateFromError(error) {
-    // Render phase mein error aaya — fallback UI dikhao
     return { hasError: true, error };
   }
 
   componentDidCatch(error, errorInfo) {
-    // Error details log karo — production mein Sentry etc. yahan hook hoga
     console.error(
       `[ErrorBoundary] "${this.props.label || "Component"}" crash hua:`,
       error,
@@ -61,7 +37,6 @@ export default class ErrorBoundary extends React.Component {
 
   render() {
     if (!this.state.hasError) {
-      // ✅ Normal render — key se force remount on retry
       return (
         <React.Fragment key={this.state.retryCount}>
           {this.props.children}
@@ -69,7 +44,6 @@ export default class ErrorBoundary extends React.Component {
       );
     }
 
-    // ── Fallback UI ───────────────────────────────────────────────
     const label   = this.props.label || "Yeh section";
     const isDev   = process.env.NODE_ENV === "development";
     const errMsg  = this.state.error?.message || "Unknown error";

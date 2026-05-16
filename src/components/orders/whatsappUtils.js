@@ -1,30 +1,16 @@
 // src/components/orders/whatsappUtils.js
-//
-// ✅ FIX 31: WhatsApp Click-to-Chat integration
-//
-// Free solution — koi API key nahi chahiye
-// wa.me link se WhatsApp khulta hai pre-filled message ke saath
-//
-// Company number: 911313088 (Guru Welding Workshop)
-
 const COMPANY_NAME   = "Guru Welding Workshop";
 const COMPANY_PHONE  = "911313088"; // Call/WA number
 
-// ─── Phone number sanitize ────────────────────────────────────────
-// Indian numbers: leading 0 hata, +91 ya 91 hata, sirf 10 digits rakho
 const sanitizePhone = (phone) => {
   if (!phone) return null;
   const digits = String(phone).replace(/\D/g, "");
-  // 10 digit Indian number
   if (digits.length === 10) return `91${digits}`;
-  // Already has 91 prefix (12 digits)
   if (digits.length === 12 && digits.startsWith("91")) return digits;
-  // Has 0 prefix (11 digits)
   if (digits.length === 11 && digits.startsWith("0")) return `91${digits.slice(1)}`;
-  return null; // invalid
+  return null;
 };
 
-// ─── wa.me link builder ───────────────────────────────────────────
 export const buildWALink = (phone, message) => {
   const num = sanitizePhone(phone);
   if (!num) return null;
@@ -32,8 +18,6 @@ export const buildWALink = (phone, message) => {
   return `https://wa.me/${num}?text=${encoded}`;
 };
 
-// ─── Message: Order Fully Complete ───────────────────────────────
-// Jab order pehli baar complete ho ya fully paid ho
 export const buildCompletedMessage = ({ customer, payment, orders = [] }) => {
   const name         = customer?.name || "Customer";
   const totalAmount  = Number(payment?.totalAmount  || 0);
@@ -44,7 +28,7 @@ export const buildCompletedMessage = ({ customer, payment, orders = [] }) => {
     : new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 
   const orderLines = orders
-    .slice(0, 5) // max 5 lines — message zyada lamba na ho
+    .slice(0, 5)
     .map((o, i) => {
       const dim = (o.height && o.width) ? `${o.height}×${o.width} ft` : "";
       const type = o.itemType || o.orderType || "";
@@ -82,8 +66,6 @@ Humse dobara kaam karwane ke liye shukriya! 🙏
 📞 *${COMPANY_NAME}*: ${COMPANY_PHONE}`;
 };
 
-// ─── Message: Due Payment Received ───────────────────────────────
-// Jab customer partial due pay kare
 export const buildDuePaymentMessage = ({ customer, received, newDue, totalSaleAmount, totalReceived }) => {
   const name    = customer?.name || "Customer";
   const date    = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });

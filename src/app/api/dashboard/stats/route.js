@@ -1,32 +1,13 @@
 // app/api/dashboard/stats/route.js
-//
-// ✅ FIX 1: goodsUsage $unwind crash fix
-//   Pehle: $unwind: "$paymentReceive.materialUsage"
-//   Bug: Agar materialUsage field missing ho (purane records) toh crash
-//   Ab: preserveNullAndEmptyArrays: true — missing/empty array wale skip hote hain
-//
-// ✅ FIX 2: Attendance Map handling unified
-//   Pehle: Map check har jagah alag alag tha — inconsistent
-//   Ab: ek helper function — saaf aur reusable
-//
-// ✅ FIX 3: Repairing income today/month/year mein count hoti hai ab
-//   Pehle: sirf CompletedOrders se income aati thi
-//
-// ✅ FIX 4: totalSalaryDue mein attendance value check fix
-//   Pehle: v.status directly access hota tha — agar string ho toh crash
-//   Ab: safe access with optional chaining
-
 import { connectDB }   from "@/lib/db";
 import Orders          from "@/app/api/orders/models/orders";
 import CompletedOrder  from "@/app/api/orders/models/CompletedOrder";
 import Employee        from "@/app/api/employees/models/Employee";
 import Goods           from "@/app/api/goods/model";
 import Expense         from "@/app/api/expenses/models/Expense";
-import Repairing       from "@/app/api/repairing/models/Repairing"; // ✅ FIX 3
+import Repairing       from "@/app/api/repairing/models/Repairing";
 import { verifyAdmin } from "@/app/api/middleware/auth";
 
-// ✅ FIX 2: Unified attendance helper
-// Pehle har jagah alag alag Map check tha — ab ek function
 const getAttendanceObj = (emp) => {
   if (!emp.attendance) return {};
   if (emp.attendance instanceof Map) return Object.fromEntries(emp.attendance);
@@ -34,14 +15,45 @@ const getAttendanceObj = (emp) => {
     Object.entries(emp.attendance).filter(([k]) => /^\d{4}-\d{2}-\d{2}$/.test(k))
   );
 };
-
-// ✅ FIX 4: Safe status check
-// Pehle: v.status — agar v string ho toh crash
-// Ab: typeof check
 const getAttStatus = (v) => {
   if (!v) return null;
   if (typeof v === "string") return v;
   return v?.status || null;
+};
+const calcDaySalary = (entry, perDaySalary, otRatePerHour = 0) => {
+  if (!entry) return 0;
+  const status   = typeof entry === "string" ? entry : (entry?.status ?? "absent");
+  const otHours  = Number(entry?.overtimeHours)  || 0;
+  const otAmount = Number(entry?.overtimeAmount) || 0;
+
+  switch (status) {
+    case "present":
+    case "auto-present": return Math.round(perDaySalary);
+    case "half-day":     return Math.round(perDaySalary * 0.5);
+    case "overtime": {
+      const otPay = otAmount > 0
+        ? otAmount
+        : otHours * (otRatePerHour > 0 ? otRatePerHour : perDaySalary / 8) * 1.5;
+      return Math.round(perDaySalary + otPay);
+    }
+    default: return 0;
+  }
+};
+
+const getTotalEarned = (emp) => {
+  const att = getAttendanceObj(emp);
+  const history = [...(emp.salaryHistory || [])].sort(
+    (a, b) => new Date(a.from) - new Date(b.from)
+  );
+
+  return Object.entries(att).reduce((sum, [date, entry]) => {
+    let perDay = emp.perDaySalary || 0;
+    for (const h of history) {
+      if (h.from <= date) perDay = h.salary;
+      else break;
+    }
+    return sum + calcDaySalary(entry, perDay, emp.overtimeRatePerHour || 0);
+  }, 0);
 };
 
 const toDateOnly = (d) => {
@@ -65,7 +77,7 @@ export const GET = verifyAdmin(async () => {
       employees,
       goodsUsage,
       monthExpenses,
-      repairingEntries, // ✅ FIX 3
+      repairingEntries,
     ] = await Promise.all([
       Orders.countDocuments({
         "orders.status": { $in: ["Pending", "Partially Completed"] },
@@ -74,15 +86,12 @@ export const GET = verifyAdmin(async () => {
         {},
         "paymentReceive.completedDate paymentReceive.totalAmount paymentReceive.receivedAmount paymentReceive.dueAmount paymentReceive.finalAmount"
       ).lean(),
-      Employee.find({}, "isActive attendance perDaySalary salaryPayments").lean(),
-
-      // ✅ FIX 1: preserveNullAndEmptyArrays — missing materialUsage wale skip honge
-      // Pehle yeh crash karta tha purane records pe
+      Employee.find({}, "isActive attendance perDaySalary salaryPayments salaryHistory overtimeRatePerHour").lean(),
       CompletedOrder.aggregate([
         {
           $unwind: {
             path: "$paymentReceive.materialUsage",
-            preserveNullAndEmptyArrays: false, // ✅ missing/empty = skip
+            preserveNullAndEmptyArrays: false,
           },
         },
         {
@@ -91,7 +100,6 @@ export const GET = verifyAdmin(async () => {
             totalUsed: { $sum: "$paymentReceive.materialUsage.kgUsed" },
           },
         },
-        // ✅ FIX: null metalType wale filter karo
         { $match: { _id: { $ne: null } } },
       ]),
 
@@ -100,7 +108,6 @@ export const GET = verifyAdmin(async () => {
         { $group: { _id: null, total: { $sum: "$amount" } } },
       ]),
 
-      // ✅ FIX 3: Repairing fetch karo
       Repairing.find({}, "amount date createdAt").lean(),
     ]);
 
@@ -112,11 +119,9 @@ export const GET = verifyAdmin(async () => {
     let absentToday  = 0;
 
     employees.filter((e) => e.isActive).forEach((emp) => {
-      // ✅ FIX 2: Unified helper use karo
       const att        = getAttendanceObj(emp);
       const todayEntry = att[today];
       if (!todayEntry) return;
-      // ✅ FIX 4: Safe status check
       const s = getAttStatus(todayEntry);
       if (s === "present" || s === "auto-present") presentToday++;
       else if (s === "absent") absentToday++;
@@ -124,14 +129,7 @@ export const GET = verifyAdmin(async () => {
 
     let totalSalaryDue = 0;
     employees.filter((e) => e.isActive).forEach((emp) => {
-      // ✅ FIX 2: Unified helper
-      const att = getAttendanceObj(emp);
-      const presentDays = Object.values(att).filter((v) => {
-        // ✅ FIX 4: Safe status check — string ya object dono handle
-        const s = getAttStatus(v);
-        return s === "present" || s === "auto-present";
-      }).length;
-      const earned = presentDays * emp.perDaySalary;
+      const earned = getTotalEarned(emp);
       const paid   = (emp.salaryPayments || []).reduce((s, p) => s + (p.amount || 0), 0);
       totalSalaryDue += Math.max(0, earned - paid);
     });
@@ -157,7 +155,6 @@ export const GET = verifyAdmin(async () => {
       if (date === today)             todayIncome += total;
     });
 
-    // ✅ FIX 3: Repairing income bhi add karo
     repairingEntries.forEach((r) => {
       const date   = r.date || toDateOnly(r.createdAt);
       const amount = Number(r.amount || 0);
@@ -184,7 +181,6 @@ export const GET = verifyAdmin(async () => {
 
     const usageMap = {};
     goodsUsage.forEach((g) => {
-      // ✅ FIX: null/undefined metalType skip
       if (g._id) usageMap[g._id] = g.totalUsed;
     });
 
@@ -236,4 +232,4 @@ export const GET = verifyAdmin(async () => {
       error: err.message,
     }), { status: 500 });
   }
-}); 
+});

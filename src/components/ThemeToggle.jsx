@@ -1,11 +1,5 @@
 "use client";
 // src/components/ThemeToggle.jsx
-//
-// ✅ NEW: Dark / Light theme toggle button
-// Two variants:
-//   <ThemeToggle />           → compact icon button (sidebar/header)
-//   <ThemeToggle expanded />  → full labeled button
-
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "@/context/ThemeContext";
 
@@ -13,7 +7,6 @@ export default function ThemeToggle({ expanded = false }) {
   const { isDark, toggleTheme } = useTheme();
 
   if (expanded) {
-    // Full labeled version — sidebar mein use karo
     return (
       <motion.button
         onClick={toggleTheme}
@@ -49,9 +42,6 @@ export default function ThemeToggle({ expanded = false }) {
               <p className="text-sm font-bold" style={{ color: isDark ? "#6b7a99" : "#475569" }}>
                 {isDark ? "Dark" : "Light"}
               </p>
-              {/* <p className="text-[10px]" style={{ color: isDark ? "#3d4260" : "#94a3b8" }}>
-                {isDark ? "Switch to Light" : "Switch to Dark"}
-              </p> */}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -65,7 +55,6 @@ export default function ThemeToggle({ expanded = false }) {
     );
   }
 
-  // Compact icon-only version — header mein use karo
   return (
     <motion.button
       onClick={toggleTheme}

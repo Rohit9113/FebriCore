@@ -1,17 +1,9 @@
 // app/api/goods/[id]/route.js
-//
-// ✅ NEW Feature 13: Goods Edit + Delete
-//
-// PATCH /api/goods/[id] — Edit karo (size, rate, kg, date)
-// DELETE /api/goods/[id] — Delete karo (permanent)
-
 import { connectDB }   from "@/lib/db";
 import Goods           from "@/app/api/goods/model";
 import { verifyAdmin } from "@/app/api/middleware/auth";
 
-// ─────────────────────────────────────────────────────────────────
 // PATCH /api/goods/[id]
-// ─────────────────────────────────────────────────────────────────
 export const PATCH = verifyAdmin(async (req, context) => {
   try {
     await connectDB();
@@ -34,7 +26,7 @@ export const PATCH = verifyAdmin(async (req, context) => {
     if (!goods) return Response.json({ success: false, error: "Goods entry nahi mili" }, { status: 404 });
 
     Object.assign(goods, updates);
-    await goods.save(); // pre-save hook se totalAmount auto-recalculate hoga
+    await goods.save();
 
     return Response.json({ success: true, message: "Goods update ho gaya", data: goods }, { status: 200 });
   } catch (err) {
@@ -42,9 +34,7 @@ export const PATCH = verifyAdmin(async (req, context) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────
 // DELETE /api/goods/[id]
-// ─────────────────────────────────────────────────────────────────
 export const DELETE = verifyAdmin(async (req, context) => {
   try {
     await connectDB();

@@ -1,8 +1,8 @@
 // app/api/admin/login/route.js
-import { connectDB } from "@/lib/db";
-import Admin         from "@/app/api/admin/model";
-import bcrypt        from "bcryptjs";
-import jwt           from "jsonwebtoken";
+import { connectDB }                                    from "@/lib/db";
+import Admin                                            from "@/app/api/admin/model";
+import bcrypt                                           from "bcryptjs";
+import { generateAccessToken, generateRefreshToken }    from "@/app/api/middleware/auth";
 
 export async function POST(req) {
   try {
@@ -25,9 +25,6 @@ export async function POST(req) {
       );
     }
 
-    // ✅ FIX: .select("+password") — select:false override karo
-    // Pehle: Admin.findOne({ phone }) → password undefined → bcrypt crash
-    // Ab: password explicitly select hoga
     const admin = await Admin.findOne({ phone }).select("+password");
 
     if (!admin) {
@@ -37,7 +34,6 @@ export async function POST(req) {
       );
     }
 
-    // ✅ Extra check: password field exist karta hai?
     if (!admin.password) {
       console.error("Admin password field missing for:", phone);
       return Response.json(
@@ -54,32 +50,25 @@ export async function POST(req) {
       );
     }
 
-    // ✅ JWT_SECRET runtime check
-    const JWT_SECRET = process.env.JWT_SECRET;
-    if (!JWT_SECRET) {
-      console.error("CRITICAL: JWT_SECRET missing");
-      return Response.json(
-        { success: false, error: "Server configuration error." },
-        { status: 500 }
-      );
-    }
+    // ✅ BUG 1 FIX: generateAccessToken + generateRefreshToken use karo
+    // Pehle: jwt.sign({...}, JWT_SECRET, { expiresIn: "7d" }) — hardcoded, dead code bypass
+    // Ab: shared functions use hote hain — consistent expiry across app
+    const tokenPayload = {
+      _id:   admin._id,
+      name:  admin.name,
+      phone: admin.phone,
+      email: admin.email,
+      role:  admin.role,
+    };
 
-    const token = jwt.sign(
-      {
-        _id:   admin._id,
-        name:  admin.name,
-        phone: admin.phone,
-        email: admin.email,
-        role:  admin.role,
-      },
-      JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    const accessToken  = generateAccessToken(tokenPayload);
+    const refreshToken = generateRefreshToken(tokenPayload);
 
     return Response.json({
       success: true,
       data: {
-        token,
+        token:        accessToken,   
+        refreshToken,
         admin: {
           _id:       admin._id,
           name:      admin.name,

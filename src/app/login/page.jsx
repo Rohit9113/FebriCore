@@ -1,10 +1,10 @@
-"use client";
 // src/app/login/page.jsx
+"use client";
 import { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/context/AuthContext";
-import axios from "axios";
+import { motion, AnimatePresence }      from "framer-motion";
+import { useRouter }                    from "next/navigation";
+import { useAuth }                      from "@/context/AuthContext";
+import axios                            from "axios";
 
 function GridBackground() {
   return (
@@ -49,7 +49,7 @@ function TiltCard({ children }) {
 }
 
 export default function LoginPage() {
-  const router       = useRouter();
+  const router           = useRouter();
   const { admin, login } = useAuth();
   const [phone,    setPhone]    = useState("");
   const [password, setPassword] = useState("");
@@ -70,14 +70,29 @@ export default function LoginPage() {
       try {
         const { data } = await axios.post("/api/admin/login", { phone, password });
         if (data?.success && data?.data?.token) {
-          const { token, admin: a } = data.data;
-          login({ token, role: a.role, name: a.name, email: a.email, phone: a.phone });
+          const { token, refreshToken, admin: a } = data.data;
+          login({
+            token,
+            refreshToken,
+            role:  a.role,
+            name:  a.name,
+            email: a.email,
+            phone: a.phone,
+          });
           router.push("/dashboard");
           return;
         }
       } catch (adminErr) {
         const status   = adminErr?.response?.status;
         const errorMsg = adminErr?.response?.data?.error;
+
+        if (status === 429) {
+          const seconds = adminErr?.response?.data?.retryAfterSeconds;
+          const mins    = seconds ? Math.ceil(seconds / 60) : 15;
+          setError(`Bahut zyada attempts ho gaye. ${mins} minute baad dobara try karo.`);
+          setShakeKey(k => k + 1);
+          return;
+        }
         if (status === 401) { setError("Phone ya password galat hai"); setShakeKey(k => k + 1); return; }
         if (status === 403) { setError(errorMsg || "Access denied");   setShakeKey(k => k + 1); return; }
         if (status !== 404) throw adminErr;
@@ -94,17 +109,9 @@ export default function LoginPage() {
           return;
         }
 
-        // ✅ FIX: Route do structures return kar sakta hai — dono handle karo
-        //
-        // Current route (employees/auth/login):
-        //   { success: true, token, employee: { _id, empId, name, phone } }
-        //   → token TOP-LEVEL pe hai, data wrapper nahi
-        //
-        // Purana route (with data wrapper):
-        //   { success: true, data: { token, role, employee: { ... } } }
-        //
-        const token    = data.token    ?? data.data?.token;
-        const employee = data.employee ?? data.data?.employee;
+        const token        = data.token        ?? data.data?.token;
+        const refreshToken = data.refreshToken  ?? data.data?.refreshToken;
+        const employee     = data.employee      ?? data.data?.employee;
 
         if (!token || !employee) {
           setError("Login response invalid — admin se baat karo");
@@ -112,10 +119,11 @@ export default function LoginPage() {
           return;
         }
 
-        localStorage.setItem("emp_token", token);
-        localStorage.setItem("emp_name",  employee.name);
-        localStorage.setItem("emp_id",    String(employee._id));
-        localStorage.setItem("emp_empId", employee.empId);
+        localStorage.setItem("emp_token",         token);
+        localStorage.setItem("emp_refresh_token", refreshToken || "");
+        localStorage.setItem("emp_name",          employee.name);
+        localStorage.setItem("emp_id",            String(employee._id));
+        localStorage.setItem("emp_empId",         employee.empId);
 
         router.push("/employee/dashboard");
         return;
@@ -125,6 +133,13 @@ export default function LoginPage() {
         const code     = empErr?.response?.data?.code;
         const errorMsg = empErr?.response?.data?.error;
 
+        if (status === 429) {
+          const seconds = empErr?.response?.data?.retryAfterSeconds;
+          const mins    = seconds ? Math.ceil(seconds / 60) : 10;
+          setError(`Bahut zyada attempts ho gaye. ${mins} minute baad dobara try karo.`);
+          setShakeKey(k => k + 1);
+          return;
+        }
         if (status === 403 && code === "ACCOUNT_DEACTIVATED") {
           setError("Aapka account deactivate hai — admin se baat karo");
           setShakeKey(k => k + 1); return;

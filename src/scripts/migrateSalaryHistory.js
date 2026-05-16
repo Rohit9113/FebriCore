@@ -1,17 +1,4 @@
 // scripts/migrateSalaryHistory.js
-//
-// ✅ ONE-TIME MIGRATION SCRIPT
-//
-// Problem: Purane employees ka salaryHistory empty hai
-//          Isliye getSalaryForDate() ko pata nahi ki
-//          original salary kya thi before increment
-//
-// Fix: Har employee ka check karo — agar salaryHistory empty hai
-//      aur perDaySalary set hai → joiningDate se initial entry add karo
-//
-// Run karo: node scripts/migrateSalaryHistory.js
-// YA:       API route se ek baar call karo (neeche dekho)
-
 import mongoose from "mongoose";
 import Employee from "../app/api/employees/models/Employee.js";
 
@@ -28,7 +15,6 @@ async function migrate() {
   let skipped = 0;
 
   for (const emp of employees) {
-    // Sirf fix karo agar salaryHistory empty hai
     if (emp.salaryHistory.length === 0 && emp.perDaySalary > 0) {
       emp.salaryHistory.push({
         salary: emp.perDaySalary,

@@ -1,12 +1,5 @@
 "use client";
 // src/components/ChangePasswordModal.jsx
-//
-// ✅ NEW: Employee apna password change kar sakta hai
-// - Current password verify hota hai pehle
-// - New password + Confirm password
-// - Strength indicator
-// - Success pe auto close
-
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence }     from "framer-motion";
 import axios                           from "axios";
