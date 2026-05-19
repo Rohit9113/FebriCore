@@ -1,7 +1,6 @@
-/* src/app/globals.css
-/* ─── Dark Theme (default) ─────────────────────────────────────── */
-
+/* src/app/globals.css */
 @import "tailwindcss";
+
 :root,
 [data-theme="dark"] {
   /* Backgrounds */

@@ -73,7 +73,8 @@ function Toast({ toasts }) {
 }
 
 // ─── Stat Card ────────────────────────────────────────────────────
-function StatCard({ label, value, unit, color, dim, icon, delay = 0, sub = null }) {
+// breakdown prop: { purchased, used, remaining, avgRate, investment }
+function StatCard({ label, color, dim, icon, delay = 0, breakdown = null, totalValue = null }) {
   const ref  = useRef(null);
   const rotX = useSpring(0, { stiffness: 300, damping: 30 });
   const rotY = useSpring(0, { stiffness: 300, damping: 30 });
@@ -92,6 +93,40 @@ function StatCard({ label, value, unit, color, dim, icon, delay = 0, sub = null 
   };
   const onLeave = () => { rotX.set(0); rotY.set(0); gX.set(50); gY.set(50); };
 
+  // Simple card (total stock)
+  if (!breakdown) {
+    return (
+      <motion.div ref={ref} onMouseMove={onMove} onMouseLeave={onLeave}
+        initial={{ opacity: 0, y: 24, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ delay, type: "spring", stiffness: 280, damping: 26 }}
+        style={{ rotateX: rotX, rotateY: rotY, transformStyle: "preserve-3d", perspective: 900 }}
+        className="relative rounded-2xl overflow-hidden">
+        <motion.div style={{ background: bg }} className="absolute inset-0 rounded-2xl pointer-events-none z-10" />
+        <div className="relative p-4 sm:p-5 rounded-2xl" style={{ background: dim, border: `1px solid ${color}25` }}>
+          <div className="flex items-start justify-between gap-2 mb-3">
+            <p className="text-[9px] font-black uppercase tracking-[0.2em]" style={{ color: `${color}90` }}>{label}</p>
+            <motion.span animate={{ rotate: [0, -8, 8, 0], scale: [1, 1.1, 1] }}
+              transition={{ duration: 4, repeat: Infinity, repeatDelay: 2, ease: "easeInOut" }}
+              className="text-xl leading-none flex-shrink-0">{icon}</motion.span>
+          </div>
+          <p className="font-black text-xl sm:text-2xl leading-tight" style={{ color, fontFamily: "'Syne', sans-serif" }}>
+            {totalValue !== null ? fmtKg(totalValue) : "—"}
+          </p>
+          <motion.div initial={{ scaleX: 0 }} animate={{ scaleX: 1 }}
+            transition={{ delay: delay + 0.3, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+            style={{ originX: 0, background: `linear-gradient(90deg, ${color}, ${color}44)` }}
+            className="mt-3 h-0.5 rounded-full" />
+        </div>
+      </motion.div>
+    );
+  }
+
+  // Breakdown card (MS / GI / Other)
+  const usedPct = breakdown.purchased > 0
+    ? (breakdown.used / breakdown.purchased) * 100
+    : 0;
+
   return (
     <motion.div ref={ref} onMouseMove={onMove} onMouseLeave={onLeave}
       initial={{ opacity: 0, y: 24, scale: 0.95 }}
@@ -100,16 +135,49 @@ function StatCard({ label, value, unit, color, dim, icon, delay = 0, sub = null 
       style={{ rotateX: rotX, rotateY: rotY, transformStyle: "preserve-3d", perspective: 900 }}
       className="relative rounded-2xl overflow-hidden">
       <motion.div style={{ background: bg }} className="absolute inset-0 rounded-2xl pointer-events-none z-10" />
-      <div className="relative p-4 sm:p-5 rounded-2xl" style={{ background: dim, border: `1px solid ${color}25` }}>
+      <div className="relative p-4 rounded-2xl" style={{ background: dim, border: `1px solid ${color}25` }}>
+
+        {/* Header */}
         <div className="flex items-start justify-between gap-2 mb-3">
           <p className="text-[9px] font-black uppercase tracking-[0.2em]" style={{ color: `${color}90` }}>{label}</p>
           <motion.span animate={{ rotate: [0, -8, 8, 0], scale: [1, 1.1, 1] }}
             transition={{ duration: 4, repeat: Infinity, repeatDelay: 2, ease: "easeInOut" }}
             className="text-xl leading-none flex-shrink-0">{icon}</motion.span>
         </div>
-        <p className="font-black text-xl sm:text-2xl leading-tight" style={{ color, fontFamily: "'Syne', sans-serif" }}>{value}</p>
-        {unit && <p className="text-[10px] mt-1" style={{ color: `${color}70` }}>{unit}</p>}
-        {sub  && <p className="text-[10px] mt-1" style={{ color: `${color}60` }}>{sub}</p>}
+
+        {/* Three rows: Kharida / Use Hua / Baaki */}
+        <div className="space-y-2 mb-3">
+          {/* Kharida */}
+          <div className="flex items-center justify-between">
+            <p className="text-[9px] font-black uppercase" style={{ color: `${color}70` }}>Kharida</p>
+            <p className="text-xs font-black text-white">{fmtKg(breakdown.purchased)}</p>
+          </div>
+          {/* Use Hua */}
+          <div className="flex items-center justify-between">
+            <p className="text-[9px] font-black uppercase" style={{ color: "#ef444490" }}>Use Hua</p>
+            <p className="text-xs font-bold" style={{ color: "#ef4444" }}>{fmtKg(breakdown.used)}</p>
+          </div>
+          {/* Baaki */}
+          <div className="flex items-center justify-between">
+            <p className="text-[9px] font-black uppercase" style={{ color: `${color}90` }}>Baaki</p>
+            <p className="text-sm font-black" style={{ color }}>{fmtKg(breakdown.remaining)}</p>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="h-1 rounded-full overflow-hidden mb-2" style={{ background: "#1e2235" }}>
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${usedPct}%` }}
+            transition={{ delay: delay + 0.4, duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+            style={{ height: "100%", background: "#ef4444", borderRadius: 999 }}
+          />
+        </div>
+        <div className="flex justify-between">
+          <p className="text-[9px]" style={{ color: "#ef444470" }}>Used {usedPct.toFixed(0)}%</p>
+          <p className="text-[9px]" style={{ color: `${color}70` }}>{fmtAmt(breakdown.avgRate)}/kg avg</p>
+        </div>
+
         <motion.div initial={{ scaleX: 0 }} animate={{ scaleX: 1 }}
           transition={{ delay: delay + 0.3, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
           style={{ originX: 0, background: `linear-gradient(90deg, ${color}, ${color}44)` }}
@@ -913,28 +981,26 @@ export default function GoodsInStock() {
       <Toast toasts={toasts} />
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-        <StatCard label="Stock Baaki"  value={fmtKg(summary.totalStock)}  icon="📦" color="#3b82f6" dim="#3b82f612" delay={0}    sub={summary.summary ? `Kharida: ${fmtKg(summary.summary.totalPurchased)}` : null} />
-        <StatCard label="MS Baaki"     value={fmtKg(summary.totalMS)}     icon="🔩" color={METAL_META.MS.color}    dim={METAL_META.MS.dim}    delay={0.06}  sub={summary.breakdown?.MS    ? `Used: ${fmtKg(summary.breakdown.MS.used)}`    : null} />
-        <StatCard label="GI Baaki"     value={fmtKg(summary.totalGI)}     icon="⚙️" color={METAL_META.GI.color}    dim={METAL_META.GI.dim}    delay={0.12}  sub={summary.breakdown?.GI    ? `Used: ${fmtKg(summary.breakdown.GI.used)}`    : null} />
-        <StatCard label="Other Baaki"  value={fmtKg(summary.totalOthers)} icon="🪙" color={METAL_META.Other.color} dim={METAL_META.Other.dim} delay={0.18}  sub={summary.breakdown?.Other ? `Used: ${fmtKg(summary.breakdown.Other.used)}` : null} />
+      <div className="grid grid-cols-3 gap-3 mb-5">
+        {/* MS breakdown card */}
+        <StatCard
+          label="MS (Mild Steel)" icon="🔩"
+          color={METAL_META.MS.color} dim={METAL_META.MS.dim} delay={0}
+          breakdown={summary.breakdown?.MS || null}
+        />
+        {/* GI breakdown card */}
+        <StatCard
+          label="GI (Galv. Iron)" icon="⚙️"
+          color={METAL_META.GI.color} dim={METAL_META.GI.dim} delay={0.06}
+          breakdown={summary.breakdown?.GI || null}
+        />
+        {/* Other breakdown card */}
+        <StatCard
+          label="Other Metals" icon="🪙"
+          color={METAL_META.Other.color} dim={METAL_META.Other.dim} delay={0.12}
+          breakdown={summary.breakdown?.Other || null}
+        />
       </div>
-
-      {/* Stock Value */}
-      {summary.summary?.totalRemainingValue > 0 && (
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="rounded-2xl p-3.5 mb-5 flex items-center justify-between"
-          style={{ background: "#f59e0b0a", border: "1px solid #f59e0b20" }}>
-          <div>
-            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-[#3d4260]">Stock Investment Value</p>
-            <p className="text-amber-400 font-black text-lg mt-0.5">{fmtAmt(summary.summary.totalRemainingValue)}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-[9px] text-[#3d4260] font-black uppercase">Total Used</p>
-            <p className="text-red-400 font-bold text-sm">{fmtKg(summary.summary.totalUsed)} iron</p>
-          </div>
-        </motion.div>
-      )}
 
       {/* Stock distribution bar */}
       {summary.totalStock > 0 && (
