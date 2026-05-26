@@ -537,7 +537,7 @@ function ExpenseSection({ expenses, setExpenses, toast, loading, isSuperAdmin })
   const [deleting,    setDeleting]    = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const goodsOnly  = expenses.filter((e) => !e.type || e.type === "goods");
+  const goodsOnly  = expenses; // sab categories show karo
   const categories = ["All", ...Array.from(new Set(goodsOnly.map((e) => e.category))).sort()];
   const filtered   = goodsOnly
     .filter((e) => catFilter === "All" || e.category === catFilter)

@@ -24,6 +24,8 @@ const fmtDate  = (d) => {
 };
 const fmtShort = (d) => new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 
+const PAYS_PER_PAGE = 6;
+
 // ─── CoinBurst ───────────────────────────────────────────────────
 const COINS  = ["💰","💵","🪙","💸","✨","⭐","🌟","💎","🔥","👑"];
 const GCOLORS = ["#f59e0b","#10b981","#3b82f6","#8b5cf6","#ec4899","#f97316","#06b6d4"];
@@ -120,6 +122,146 @@ const Fade = ({ children, delay = 0 }) => (
 );
 const SK = ({ cls = "" }) => <div className={`bg-white/[0.05] rounded-xl animate-pulse ${cls}`} />;
 
+// ─── Payment Pagination ───────────────────────────────────────────
+function PaymentList({ pays }) {
+  const [page, setPage] = useState(1);
+
+  // New to old (latest first)
+  const sorted     = [...pays].sort((a, b) => (a.paidOn < b.paidOn ? 1 : -1));
+  const totalPages = Math.ceil(sorted.length / PAYS_PER_PAGE);
+  const startIdx   = (page - 1) * PAYS_PER_PAGE;
+  const pageItems  = sorted.slice(startIdx, startIdx + PAYS_PER_PAGE);
+
+  // Reset to page 1 when pays changes
+  useEffect(() => { setPage(1); }, [pays.length]);
+
+  if (pays.length === 0) {
+    return (
+      <div className="py-16 text-center">
+        <p className="text-4xl mb-3">💸</p>
+        <p className="text-[#3d4870] text-sm">Abhi tak koi payment nahi mili</p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* Running total bar */}
+      <div className="px-5 pb-3 flex items-center justify-between">
+        <p className="text-[10px] text-[#3d4870]">
+          {sorted.length} payments · Latest pehle
+        </p>
+        <p className="text-[10px] text-emerald-400 font-bold">
+          Total: {fmtAmt(pays.reduce((s, p) => s + (p.amount || 0), 0))}
+        </p>
+      </div>
+
+      {/* Payment rows */}
+      <div className="divide-y divide-white/[0.05]">
+        <AnimatePresence mode="wait">
+          <motion.div key={page}
+            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
+            {pageItems.map((pay, i) => {
+              const globalIdx = startIdx + i + 1; // 1-based serial
+              const isLatest  = startIdx + i === 0;
+              return (
+                <div key={i}
+                  className="flex items-center gap-4 px-5 py-4 hover:bg-white/[0.02] transition-colors">
+                  {/* Serial + icon */}
+                  <div className="flex-shrink-0 flex flex-col items-center gap-1">
+                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-lg border
+                      ${isLatest
+                        ? "bg-emerald-500/18 border-emerald-500/25"
+                        : "bg-emerald-500/8 border-emerald-500/12"}`}>
+                      💵
+                    </div>
+                    <span className="text-[9px] text-[#2e3248] font-bold">#{globalIdx}</span>
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-white font-black text-lg">{fmtAmt(pay.amount)}</p>
+                      {isLatest && (
+                        <span className="text-[9px] bg-blue-500/15 border border-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full font-bold">
+                          LATEST
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[#4a5580] text-xs mt-0.5 truncate">
+                      📅 {fmtDate(pay.paidOn)}{pay.note ? ` · ${pay.note}` : ""}
+                    </p>
+                  </div>
+
+                  {/* Badge */}
+                  <span className="flex-shrink-0 text-xs bg-emerald-500/10 border border-emerald-500/15 text-emerald-400 px-3 py-1.5 rounded-xl font-bold">
+                    ✓ Paid
+                  </span>
+                </div>
+              );
+            })}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="px-5 py-4 border-t border-white/[0.05] flex items-center justify-between gap-3">
+          <button
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="px-4 py-2 rounded-xl text-xs font-bold border border-white/[0.08] text-[#4a5580]
+                       hover:text-white hover:bg-white/[0.04] disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+            ← Pehle
+          </button>
+
+          {/* Page numbers */}
+          <div className="flex items-center gap-1.5">
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map(pg => {
+              const isActive = pg === page;
+              // Show first, last, current, current±1
+              const show = pg === 1 || pg === totalPages || Math.abs(pg - page) <= 1;
+              if (!show) {
+                if (pg === 2 || pg === totalPages - 1) {
+                  return <span key={pg} className="text-[#2e3248] text-xs px-1">…</span>;
+                }
+                return null;
+              }
+              return (
+                <button key={pg} onClick={() => setPage(pg)}
+                  className={`w-8 h-8 rounded-xl text-xs font-black transition-all border
+                    ${isActive
+                      ? "bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/20"
+                      : "border-white/[0.07] text-[#4a5580] hover:text-white hover:bg-white/[0.04]"}`}>
+                  {pg}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages}
+            className="px-4 py-2 rounded-xl text-xs font-bold border border-white/[0.08] text-[#4a5580]
+                       hover:text-white hover:bg-white/[0.04] disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+            Aage →
+          </button>
+        </div>
+      )}
+
+      {/* Page info */}
+      {totalPages > 1 && (
+        <div className="px-5 pb-4 text-center">
+          <p className="text-[10px] text-[#2e3248]">
+            Page {page} of {totalPages} · {startIdx + 1}–{Math.min(startIdx + PAYS_PER_PAGE, sorted.length)} of {sorted.length}
+          </p>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ════════════════════════════════════════════════════════════════
 //  MAIN DASHBOARD
 // ════════════════════════════════════════════════════════════════
@@ -168,10 +310,10 @@ export default function EmployeeDashboard() {
 
   const selLabel     = months.find(m => m.val === selMonth)?.label || "";
   const paidPct      = ss?.totalEarned > 0 ? Math.round((ss.totalPaid / ss.totalEarned) * 100) : 0;
-  const todayPresent = att.present.includes(TODAY);
-  const todayAbsent  = att.absent.includes(TODAY);
-  const monthPresent = att.present.filter(d => d.startsWith(selMonth));
-  const monthAbsent  = att.absent.filter(d => d.startsWith(selMonth));
+  const todayPresent = att.present?.includes(TODAY);
+  const todayAbsent  = att.absent?.includes(TODAY);
+  const monthPresent = att.present?.filter(d => d.startsWith(selMonth)) || [];
+  const monthAbsent  = att.absent?.filter(d => d.startsWith(selMonth))  || [];
 
   return (
     <div className="min-h-screen bg-[#080a12]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -186,8 +328,6 @@ export default function EmployeeDashboard() {
       {/* ══ HEADER ════════════════════════════════════════════ */}
       <header className="sticky top-0 z-50 bg-[#080a12]/96 backdrop-blur-2xl border-b border-white/[0.06]">
         <div className="flex items-center gap-3 px-4 lg:px-8 py-3 max-w-screen-xl mx-auto">
-
-          {/* Avatar */}
           <motion.div initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }}
             transition={{ type: "spring", stiffness: 320, damping: 22, delay: 0.1 }}
             className="relative flex-shrink-0">
@@ -211,7 +351,7 @@ export default function EmployeeDashboard() {
             </div>
           </div>
 
-          {/* Desktop: month selector in header */}
+          {/* Desktop month selector */}
           <div className="hidden lg:flex gap-1.5 overflow-x-auto scrollbar-hide max-w-lg">
             {months.slice(0, 8).map(m => (
               <motion.button key={m.val} whileTap={{ scale: 0.93 }} onClick={() => setSelMonth(m.val)}
@@ -256,31 +396,23 @@ export default function EmployeeDashboard() {
           )}
         </AnimatePresence>
 
-        {/* ─── SKELETON ─────────────────────────────────────── */}
+        {/* SKELETON */}
         {fetching && !data && (
           <div className="space-y-4">
-            {/* Mobile month selector skeleton */}
             <div className="flex gap-2 lg:hidden">{[1,2,3,4,5].map(i => <SK key={i} cls="h-9 w-20 flex-shrink-0" />)}</div>
-            {/* Desktop skeleton grid */}
             <div className="hidden lg:grid lg:grid-cols-3 lg:gap-6">
               <div className="lg:col-span-1 space-y-4">
-                <SK cls="h-72 rounded-3xl" />
-                <SK cls="h-16 rounded-2xl" />
+                <SK cls="h-72 rounded-3xl" /><SK cls="h-16 rounded-2xl" />
                 <div className="grid grid-cols-2 gap-3"><SK cls="h-28" /><SK cls="h-28" /><SK cls="h-28" /><SK cls="h-28" /></div>
               </div>
               <div className="lg:col-span-2 space-y-4">
-                <SK cls="h-14 rounded-2xl" />
-                <SK cls="h-64 rounded-2xl" />
-                <SK cls="h-64 rounded-2xl" />
+                <SK cls="h-14 rounded-2xl" /><SK cls="h-64 rounded-2xl" /><SK cls="h-64 rounded-2xl" />
               </div>
             </div>
-            {/* Mobile skeleton */}
             <div className="lg:hidden space-y-4">
-              <SK cls="h-56 rounded-3xl" />
-              <SK cls="h-16 rounded-2xl" />
+              <SK cls="h-56 rounded-3xl" /><SK cls="h-16 rounded-2xl" />
               <div className="grid grid-cols-2 gap-3"><SK cls="h-28" /><SK cls="h-28" /><SK cls="h-28" /><SK cls="h-28" /></div>
-              <SK cls="h-14 rounded-2xl" />
-              <SK cls="h-48 rounded-2xl" />
+              <SK cls="h-14 rounded-2xl" /><SK cls="h-48 rounded-2xl" />
             </div>
           </div>
         )}
@@ -300,23 +432,15 @@ export default function EmployeeDashboard() {
               ))}
             </div>
 
-            {/* ════════════════════════════════════════════════
-                DESKTOP LAYOUT: sidebar left + content right
-                MOBILE LAYOUT:  single column stacked
-            ════════════════════════════════════════════════ */}
             <div className="lg:grid lg:grid-cols-[340px_1fr] lg:gap-6 xl:grid-cols-[380px_1fr]">
 
-              {/* ╔════════════════════════════════════════════╗
-                  ║  LEFT SIDEBAR (desktop) / Top (mobile)    ║
-                  ╚════════════════════════════════════════════╝ */}
+              {/* LEFT SIDEBAR */}
               <div className="space-y-4 lg:space-y-5">
 
                 {/* HERO SALARY CARD */}
                 <Fade>
-                  <motion.div
-                    className="relative rounded-3xl overflow-hidden p-5 lg:p-6"
-                    style={{ background: "linear-gradient(145deg,#0c1428 0%,#0f1120 55%,#080c1e 100%)" }}
-                  >
+                  <motion.div className="relative rounded-3xl overflow-hidden p-5 lg:p-6"
+                    style={{ background: "linear-gradient(145deg,#0c1428 0%,#0f1120 55%,#080c1e 100%)" }}>
                     <div className="absolute inset-0 rounded-3xl border border-blue-500/15 pointer-events-none" />
                     <div className="absolute top-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-blue-400/30 to-transparent" />
                     <div className="absolute top-0 right-0 w-56 h-56 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
@@ -324,29 +448,6 @@ export default function EmployeeDashboard() {
                     <motion.div animate={{ rotate: 360 }} transition={{ duration: 22, repeat: Infinity, ease: "linear" }}
                       className="absolute -top-16 -right-16 w-52 h-52 rounded-full border border-blue-400/8 pointer-events-none" />
 
-                    <div className="flex items-start justify-between mb-5 relative z-10">
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400/50 mb-2">
-                          Total Salary Kamai 💼
-                        </p>
-                        <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.2 }}
-                          className="font-black text-white leading-none"
-                          style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(2rem, 5vw, 2.6rem)" }}>
-                          <SalaryReveal amount={ss?.totalEarned || 0} trigger={!!data} />
-                        </motion.p>
-                        <p className="text-[#3d4870] text-xs mt-2">
-                          {ss?.totalPresentDays || 0} din ·{" "}
-                          <span className="text-blue-300/60">{fmtAmt(ss?.perDaySalary)}/din</span>
-                        </p>
-                      </div>
-                      <motion.div animate={{ y: [0, -6, 0] }} transition={{ duration: 3, repeat: Infinity }}
-                        className="w-14 h-14 rounded-2xl bg-blue-500/15 border border-blue-400/20 flex items-center justify-center text-3xl flex-shrink-0">
-                        💰
-                      </motion.div>
-                    </div>
-
-                    {/* Pills */}
                     <div className="grid grid-cols-3 gap-2 mb-5 relative z-10">
                       {[
                         { label: "Mila ✓",   val: fmtAmt(ss?.totalPaid),
@@ -365,7 +466,6 @@ export default function EmployeeDashboard() {
                       ))}
                     </div>
 
-                    {/* Progress bar */}
                     {ss?.totalEarned > 0 && (
                       <div className="relative z-10">
                         <div className="flex justify-between text-[10px] mb-1.5">
@@ -459,7 +559,7 @@ export default function EmployeeDashboard() {
                   </Fade>
                 )}
 
-                {/* PROFILE — desktop sidebar only */}
+                {/* PROFILE — desktop sidebar */}
                 <div className="hidden lg:block">
                   <Fade delay={0.2}>
                     <Card className="p-4">
@@ -479,18 +579,16 @@ export default function EmployeeDashboard() {
                         </div>
                       </div>
                       <SecTitle icon="📋" title="Info" />
-                      <InfoRow label="Phone"        value={p?.phone} />
-                      <InfoRow label="Address"      value={p?.address || "—"} />
-                      <InfoRow label="Joined"       value={fmtDate(p?.joiningDate)} />
-                      <InfoRow label="Salary/Din"   value={fmtAmt(p?.perDaySalary)} highlight last />
+                      <InfoRow label="Phone"      value={p?.phone} />
+                      <InfoRow label="Address"    value={p?.address || "—"} />
+                      <InfoRow label="Joined"     value={fmtDate(p?.joiningDate)} />
+                      <InfoRow label="Salary/Din" value={fmtAmt(p?.perDaySalary)} highlight last />
                     </Card>
                   </Fade>
                 </div>
               </div>
 
-              {/* ╔════════════════════════════════════════════╗
-                  ║  RIGHT CONTENT (desktop) / Bottom (mobile)║
-                  ╚════════════════════════════════════════════╝ */}
+              {/* RIGHT CONTENT */}
               <div className="mt-4 lg:mt-0 space-y-4 lg:space-y-5">
 
                 {/* TABS */}
@@ -527,11 +625,8 @@ export default function EmployeeDashboard() {
                     <motion.div key="ov" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}
                       className="space-y-4">
-
-                      {/* All-time */}
                       <Card className="p-5">
                         <SecTitle icon="💼" title="Poori Kamai — All Time" />
-                        {/* Desktop: 3-col grid */}
                         <div className="hidden lg:grid lg:grid-cols-3 lg:gap-4 mb-4">
                           {[
                             { label: "Total Earned",   val: fmtAmt(ss?.totalEarned),           color: "text-amber-400",   bg: "bg-amber-500/8 border-amber-500/15"   },
@@ -547,19 +642,17 @@ export default function EmployeeDashboard() {
                             </div>
                           ))}
                         </div>
-                        {/* Mobile: table */}
                         <div className="lg:hidden">
-                          <InfoRow label="Total Earned"  value={fmtAmt(ss?.totalEarned)} highlight />
-                          <InfoRow label="Total Paid ✓"  value={fmtAmt(ss?.totalPaid)}             />
-                          <InfoRow label="Total Due ⏳"   value={fmtAmt(ss?.totalDue)}  highlight={ss?.totalDue > 0} />
+                          <InfoRow label="Total Earned" value={fmtAmt(ss?.totalEarned)} highlight />
+                          <InfoRow label="Total Paid ✓" value={fmtAmt(ss?.totalPaid)}             />
+                          <InfoRow label="Total Due ⏳"  value={fmtAmt(ss?.totalDue)} highlight={ss?.totalDue > 0} />
                         </div>
-                        {/* Common rows */}
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
                           {[
-                            { label: "Present Days", val: `${ss?.totalPresentDays||0}`, unit: "din", color: "text-emerald-400" },
-                            { label: "Absent Days",  val: `${ss?.totalAbsentDays||0}`,  unit: "din", color: "text-red-400"     },
-                            { label: "Payments",     val: `${ss?.paymentCount||0}`,     unit: "baar",color: "text-blue-300"    },
-                            { label: "Per Day Rate", val: fmtAmt(ss?.perDaySalary),     unit: "/din", color: "text-amber-400"  },
+                            { label: "Present Days", val: `${ss?.totalPresentDays||0}`, unit: "din",  color: "text-emerald-400" },
+                            { label: "Absent Days",  val: `${ss?.totalAbsentDays||0}`,  unit: "din",  color: "text-red-400"     },
+                            { label: "Payments",     val: `${ss?.paymentCount||0}`,     unit: "baar", color: "text-blue-300"    },
+                            { label: "Per Day Rate", val: fmtAmt(ss?.perDaySalary),     unit: "/din", color: "text-amber-400"   },
                           ].map(s => (
                             <div key={s.label} className="bg-white/[0.03] border border-white/[0.05] rounded-xl p-3">
                               <p className={`font-black text-lg ${s.color}`}>{s.val}<span className="text-xs font-normal text-[#4a5580] ml-1">{s.unit}</span></p>
@@ -569,7 +662,6 @@ export default function EmployeeDashboard() {
                         </div>
                       </Card>
 
-                      {/* Due / Clear */}
                       {ss?.totalDue > 0 ? (
                         <div className="bg-orange-500/8 border border-orange-500/20 rounded-2xl p-5">
                           <div className="flex items-center gap-3 mb-4">
@@ -609,16 +701,11 @@ export default function EmployeeDashboard() {
                     <motion.div key="at" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}
                       className="space-y-4">
-
-                      {/* Desktop: 2-col layout */}
                       <div className="lg:grid lg:grid-cols-2 lg:gap-5 space-y-4 lg:space-y-0">
-                        {/* Calendar */}
                         <Card className="p-5">
                           <SecTitle icon="📅" title={`${selLabel} — Calendar`} />
                           <AttendanceCalendar month={selMonth} present={att.present} absent={att.absent} />
                         </Card>
-
-                        {/* Stats + dates */}
                         <div className="space-y-4">
                           {ms && (
                             <div className="grid grid-cols-3 gap-2.5">
@@ -648,8 +735,6 @@ export default function EmployeeDashboard() {
                           </Card>
                         </div>
                       </div>
-
-                      {/* All-time */}
                       <Card className="p-4">
                         <SecTitle icon="📊" title="Total Attendance — Sab Mahine" />
                         <div className="grid grid-cols-2 gap-3">
@@ -666,7 +751,7 @@ export default function EmployeeDashboard() {
                       exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}
                       className="space-y-4">
 
-                      {/* Desktop: 3-col summary */}
+                      {/* Summary cards */}
                       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
                         <Card className="p-4 lg:p-5">
                           <p className="text-[10px] text-[#4a5580] uppercase tracking-wide mb-2">Total Mila</p>
@@ -700,37 +785,19 @@ export default function EmployeeDashboard() {
                         )}
                       </div>
 
-                      {/* Payment list */}
+                      {/* ── Payment List with Pagination ── */}
                       <Card>
-                        <div className="px-5 pt-5 pb-2">
-                          <SecTitle icon="💸" title={`Payment History (${pays.length})`} />
+                        <div className="px-5 pt-5 pb-3 border-b border-white/[0.05]">
+                          <div className="flex items-center justify-between">
+                            <SecTitle icon="💸" title={`Payment History (${pays.length})`} />
+                            {pays.length > 0 && (
+                              <span className="text-[10px] text-[#3d4870] bg-white/[0.04] border border-white/[0.06] px-2.5 py-1 rounded-lg">
+                                Latest → Oldest
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        {pays.length === 0 ? (
-                          <div className="py-16 text-center">
-                            <p className="text-4xl mb-3">💸</p>
-                            <p className="text-[#3d4870] text-sm">Abhi tak koi payment nahi mili</p>
-                          </div>
-                        ) : (
-                          <div className="divide-y divide-white/[0.05]">
-                            {[...pays].reverse().map((pay, i) => (
-                              <motion.div key={i}
-                                initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: i * 0.04 }}
-                                className="flex items-center gap-4 px-5 py-4 hover:bg-white/[0.02] transition-colors">
-                                <div className="w-11 h-11 rounded-2xl bg-emerald-500/10 border border-emerald-500/15 flex items-center justify-center flex-shrink-0 text-lg">💵</div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-white font-black text-lg">{fmtAmt(pay.amount)}</p>
-                                  <p className="text-[#4a5580] text-xs mt-0.5 truncate">
-                                    {fmtDate(pay.paidOn)}{pay.note ? ` · ${pay.note}` : ""}
-                                  </p>
-                                </div>
-                                <span className="flex-shrink-0 text-xs bg-emerald-500/10 border border-emerald-500/15 text-emerald-400 px-3 py-1.5 rounded-xl font-bold">
-                                  ✓ Paid
-                                </span>
-                              </motion.div>
-                            ))}
-                          </div>
-                        )}
+                        <PaymentList pays={pays} />
                       </Card>
                     </motion.div>
                   )}
@@ -740,8 +807,6 @@ export default function EmployeeDashboard() {
                     <motion.div key="pr" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}
                       className="space-y-4">
-
-                      {/* Desktop: 2-col */}
                       <div className="lg:grid lg:grid-cols-2 lg:gap-5 space-y-4 lg:space-y-0">
                         <Card className="p-5">
                           <div className="flex items-center gap-4 mb-5 pb-4 border-b border-white/[0.05]">
@@ -760,16 +825,15 @@ export default function EmployeeDashboard() {
                             </div>
                           </div>
                           <SecTitle icon="📋" title="Personal Info" />
-                          <InfoRow label="Full Name"    value={p?.name}                           />
-                          <InfoRow label="Employee ID"  value={p?.empId}                          />
-                          <InfoRow label="Phone"        value={p?.phone}                          />
-                          <InfoRow label="Address"      value={p?.address || "—"}                 />
-                          <InfoRow label="Joined"       value={fmtDate(p?.joiningDate)}           />
-                          <InfoRow label="Salary"       value={`${fmtAmt(p?.perDaySalary)}/din`} highlight />
-                          <InfoRow label="Status"       value={p?.isActive ? "Active ✅" : "Inactive ❌"} last />
+                          <InfoRow label="Full Name"   value={p?.name}                           />
+                          <InfoRow label="Employee ID" value={p?.empId}                          />
+                          <InfoRow label="Phone"       value={p?.phone}                          />
+                          <InfoRow label="Address"     value={p?.address || "—"}                 />
+                          <InfoRow label="Joined"      value={fmtDate(p?.joiningDate)}           />
+                          <InfoRow label="Salary"      value={`${fmtAmt(p?.perDaySalary)}/din`} highlight />
+                          <InfoRow label="Status"      value={p?.isActive ? "Active ✅" : "Inactive ❌"} last />
                         </Card>
 
-                        {/* Salary history */}
                         {hist.length > 0 && (
                           <Card className="p-5">
                             <SecTitle icon="📈" title={`Salary History (${hist.length})`} />
@@ -841,8 +905,7 @@ function AttendanceCalendar({ month, present, absent }) {
           const isPre = preSet.has(date), isAbs = absSet.has(date), isTdy = date === TODAY;
           return (
             <motion.div key={date}
-              initial={{ opacity: 0, scale: 0.6 }}
-              animate={{ opacity: 1, scale: 1 }}
+              initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: i * 0.01, type: "spring", stiffness: 280, damping: 20 }}
               className={`aspect-square flex items-center justify-center text-xs font-bold rounded-xl
                 ${isPre ? "bg-emerald-500/22 text-emerald-400 border border-emerald-500/20"

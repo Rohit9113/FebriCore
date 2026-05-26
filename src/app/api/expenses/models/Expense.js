@@ -1,50 +1,49 @@
 //app/api/expenses/models/Expense.js
 import mongoose from "mongoose";
 
+// Clear cached model to avoid stale enum issues
+if (mongoose.models.Expense) {
+  delete mongoose.models.Expense;
+}
+
 const ExpenseSchema = new mongoose.Schema(
   {
-    type: {
-      type: String,
-      enum: ["goods"],
-      default: "goods",
-    },
     category: {
-      type: String,
-      enum: ["Material", "Hardware", "Fuel", "Designs", "Other"],
+      type:     String,
+      enum:     ["Hardware", "Diesel", "Petrol", "Transport", "Other"],
       required: true,
     },
     desc: {
-      type: String,
+      type:     String,
       required: true,
-      trim: true,
+      trim:     true,
     },
     qty: {
-      type: Number,
+      type:    Number,
       default: 1,
     },
     unit: {
-      type: String,
+      type:    String,
       default: "pcs",
     },
     rate: {
-      type: Number,
+      type:    Number,
       default: 0,
     },
     amount: {
-      type: Number,
+      type:     Number,
       required: true,
     },
     date: {
-      type: String, // "YYYY-MM-DD"
+      type:     String,
       required: true,
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Admin",
+      ref:  "Admin",
     },
   },
   { timestamps: true }
 );
 
-export default mongoose.models.Expense ||
-  mongoose.model("Expense", ExpenseSchema);
+export default mongoose.model("Expense", ExpenseSchema);

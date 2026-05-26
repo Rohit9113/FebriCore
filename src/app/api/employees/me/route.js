@@ -1,16 +1,28 @@
 // app/api/employees/me/route.js
+import { connectDB }        from "@/lib/db";
+import Employee             from "@/app/api/employees/models/Employee";
+import { verifyEmployee }   from "@/app/api/middleware/auth";
+import { getSalaryForDate } from "@/app/api/employees/salaryUtils";
 
-import { connectDB }      from "@/lib/db";
-import Employee           from "@/app/api/employees/models/Employee";
-import { verifyEmployee } from "@/app/api/middleware/auth";
+// ─── BUG FIX: Admin ke /salary/pay GET se match kiya ─────────────
+//
+// Admin /api/employees/[id]/salary/pay:
+//   - getSalaryForDate(date, employee) → calcDaySalary internally call hoti hai
+//   - allEntries pe loop → present + half-day + overtime + absent sab sahi
+//
+// Employee /me (pehle):
+//   - sirf presentDays pe loop → half-day + overtime miss
+//   - local getSalaryForDate sirf rate return karta tha, calculated amount nahi
+//   - monthSummary.due mein global totalDue aa raha tha
+//   - attendance response mein half-day + overtime nahi tha
+//
+// Ab: admin ke salary/pay GET jaisa hi logic apply kiya hai
+// ─────────────────────────────────────────────────────────────────
 
-const getSalaryForDate = (date, salaryHistory, perDaySalary) => {
-  if (!salaryHistory || salaryHistory.length === 0) return perDaySalary;
-  const applicable = salaryHistory
-    .filter((h) => h.from <= date)
-    .sort((a, b) => new Date(b.from) - new Date(a.from)); // latest first
-  return applicable.length > 0 ? applicable[0].salary : perDaySalary;
-};
+const getAttObj = (emp) =>
+  emp.attendance instanceof Map
+    ? Object.fromEntries(emp.attendance)
+    : (emp.attendance || {});
 
 export const GET = verifyEmployee(async (req) => {
   try {
@@ -32,64 +44,110 @@ export const GET = verifyEmployee(async (req) => {
       );
     }
 
-    if (emp.deactivatedOn) {
-      return Response.json(
-        { success: false, error: `Account deactivate ho gaya tha ${emp.deactivatedOn} ko`, code: "ACCOUNT_DEACTIVATED" },
-        { status: 403 }
-      );
-    }
+    const { searchParams } = new URL(req.url);
+    const month = searchParams.get("month"); // "YYYY-MM" optional
 
-    const attObj = emp.attendance instanceof Map
-      ? Object.fromEntries(emp.attendance)
-      : Object.fromEntries(Object.entries(emp.attendance || {}));
-
+    const attObj  = getAttObj(emp);
     const allEntries = Object.entries(attObj);
 
-    const presentDays = allEntries
-      .filter(([, v]) => v.status === "present" || v.status === "auto-present")
-      .map(([d]) => d)
-      .sort((a, b) => (a < b ? 1 : -1));
+    // ── Filter by month if provided ───────────────────────────────
+    const filteredEntries = month
+      ? allEntries.filter(([date]) => date.startsWith(month))
+      : allEntries;
 
-    const absentDays = allEntries
-      .filter(([, v]) => v.status === "absent")
-      .map(([d]) => d)
-      .sort((a, b) => (a < b ? 1 : -1));
+    // ── Attendance buckets ────────────────────────────────────────
+    const presentDates = [];
+    const halfDayDates = [];
+    const overtimeDates = [];
+    const absentDates  = [];
 
-    const salaryHistory = emp.salaryHistory || [];
-    const totalEarned = presentDays.reduce(
-      (sum, date) => sum + getSalaryForDate(date, salaryHistory, emp.perDaySalary),
+    filteredEntries.forEach(([date, v]) => {
+      const s = typeof v === "string" ? v : (v?.status ?? "absent");
+      if      (s === "present" || s === "auto-present") presentDates.push(date);
+      else if (s === "half-day")  halfDayDates.push(date);
+      else if (s === "overtime")  overtimeDates.push(date);
+      else if (s === "absent")    absentDates.push(date);
+    });
+
+    // Sort latest first
+    const sortDesc = (a, b) => (a < b ? 1 : -1);
+    presentDates.sort(sortDesc);
+    halfDayDates.sort(sortDesc);
+    overtimeDates.sort(sortDesc);
+    absentDates.sort(sortDesc);
+
+    // ── Salary earned (admin ke salary/pay GET jaisa) ─────────────
+    // getSalaryForDate(date, emp) → calcDaySalary internally
+    // absent=0, half-day=0.5x, present=1x, overtime=1x+otPay
+    const filteredNonAbsent = filteredEntries
+      .filter(([, v]) => {
+        const s = typeof v === "string" ? v : (v?.status ?? "absent");
+        return s !== "absent";
+      })
+      .map(([date]) => date);
+
+    const totalEarned = filteredNonAbsent.reduce(
+      (sum, date) => sum + getSalaryForDate(date, emp),
       0
     );
 
-    const allPayments = emp.salaryPayments || [];
-    const totalPaid   = allPayments.reduce((s, p) => s + (p.amount || 0), 0);
-    const totalDue    = Math.max(0, totalEarned - totalPaid);
-    const url         = new URL(req.url);
-    const monthParam  = url.searchParams.get("month");
+    // ── Payments ──────────────────────────────────────────────────
+    const allPayments  = emp.salaryPayments || [];
+    const totalPaid    = allPayments.reduce((s, p) => s + (p.amount || 0), 0);
+    const totalDue     = Math.max(0, Math.round(totalEarned) - Math.round(totalPaid));
 
+    // ── Overtime detail (for display) ────────────────────────────
+    const overtimeDetail = overtimeDates.map((date) => {
+      const v = attObj[date];
+      return {
+        date,
+        overtimeHours:  typeof v === "object" ? (v?.overtimeHours  || 0) : 0,
+        overtimeAmount: typeof v === "object" ? (v?.overtimeAmount || 0) : 0,
+        earned:         getSalaryForDate(date, emp),
+      };
+    });
+
+    // ── Month summary ─────────────────────────────────────────────
     let monthSummary = null;
-    if (monthParam) {
-      const monthPresent = presentDays.filter((d) => d.startsWith(monthParam));
-      const monthAbsent  = absentDays.filter((d)  => d.startsWith(monthParam));
-
-      const monthEarned = monthPresent.reduce(
-        (sum, date) => sum + getSalaryForDate(date, salaryHistory, emp.perDaySalary),
-        0
-      );
-
+    if (month) {
       const monthPaid = allPayments
-        .filter((p) => p.paidOn?.startsWith(monthParam))
+        .filter((p) => p.paidOn?.startsWith(month))
         .reduce((s, p) => s + (p.amount || 0), 0);
 
       monthSummary = {
-        month:       monthParam,
-        presentDays: monthPresent.length,
-        absentDays:  monthAbsent.length,
-        earned:      monthEarned,
-        paid:        monthPaid,
-        due:         totalDue,
+        month,
+        presentDays:  presentDates.length,
+        halfDayDays:  halfDayDates.length,
+        overtimeDays: overtimeDates.length,
+        absentDays:   absentDates.length,
+        totalEarned:  Math.round(totalEarned),
+        totalPaid:    Math.round(monthPaid),
+        totalDue:     Math.max(0, Math.round(totalEarned - monthPaid)),
       };
     }
+
+    // ── Overall stats (always full, not filtered) ─────────────────
+    // Month filter applied above — ab overall bhi chahiye frontend ke liye
+    const allNonAbsent = allEntries
+      .filter(([, v]) => {
+        const s = typeof v === "string" ? v : (v?.status ?? "absent");
+        return s !== "absent";
+      })
+      .map(([date]) => date);
+
+    const overallEarned = allNonAbsent.reduce(
+      (sum, date) => sum + getSalaryForDate(date, emp),
+      0
+    );
+
+    let overallPresent = 0, overallHalf = 0, overallOT = 0, overallAbsent = 0;
+    allEntries.forEach(([, v]) => {
+      const s = typeof v === "string" ? v : (v?.status ?? "absent");
+      if      (s === "present" || s === "auto-present") overallPresent++;
+      else if (s === "half-day")  overallHalf++;
+      else if (s === "overtime")  overallOT++;
+      else if (s === "absent")    overallAbsent++;
+    });
 
     return Response.json({
       success: true,
@@ -104,27 +162,45 @@ export const GET = verifyEmployee(async (req) => {
           perDaySalary: emp.perDaySalary,
           isActive:     emp.isActive,
         },
+
+        // Overall salary (full history, not month-filtered)
         salarySummary: {
-          perDaySalary:     emp.perDaySalary,
-          totalPresentDays: presentDays.length,
-          totalAbsentDays:  absentDays.length,
-          totalEarned,       // ← ab sahi hai
-          totalPaid,
-          totalDue,
-          paymentCount:     allPayments.length,
+          perDaySalary:      emp.perDaySalary,
+          totalPresentDays:  overallPresent,
+          totalHalfDays:     overallHalf,
+          totalOvertimeDays: overallOT,
+          totalAbsentDays:   overallAbsent,
+          totalEarned:       Math.round(overallEarned),
+          totalPaid:         Math.round(totalPaid),
+          totalDue:          Math.max(0, Math.round(overallEarned - totalPaid)),
+          paymentCount:      allPayments.length,
         },
+
+        // Month-filtered summary (if ?month=YYYY-MM passed)
         monthSummary,
 
-        attendance: {
-          present: presentDays,
-          absent:  absentDays,
+        // Attendance lists (month-filtered if ?month passed, else all)
+        summary: {
+          presentDays:   presentDates.length,
+          halfDayDays:   halfDayDates.length,
+          overtimeDays:  overtimeDates.length,
+          absentDays:    absentDates.length,
+          totalEarned:   Math.round(totalEarned),
+          totalPaid:     Math.round(totalPaid),
+          totalDue,
         },
+
+        presentDatesList:  presentDates,
+        halfDayDatesList:  halfDayDates,
+        overtimeDatesList: overtimeDates,
+        absentDatesList:   absentDates,
+        overtimeDetail,
 
         payments: [...allPayments]
           .sort((a, b) => (a.paidOn < b.paidOn ? 1 : -1))
           .map((p) => ({ amount: p.amount, paidOn: p.paidOn, note: p.note || "" })),
 
-        salaryHistory: [...salaryHistory].reverse(),
+        salaryHistory: [...(emp.salaryHistory || [])].reverse(),
       },
     }, { status: 200 });
 
