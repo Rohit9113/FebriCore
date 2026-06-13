@@ -35,7 +35,7 @@ export default function ThemeToggle({ expanded = false }) {
 
         {/* Label */}
         <div className="flex-1 text-left">
-          <AnimatePresence mode="wait">
+          <AnimatePresence>
             <motion.div key={isDark ? "dark" : "light"}
               initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.15 }}>
@@ -78,7 +78,7 @@ export default function ThemeToggle({ expanded = false }) {
         className="absolute inset-0 rounded-2xl" />
 
       {/* Icon swap */}
-      <AnimatePresence mode="wait">
+      <AnimatePresence>
         <motion.span key={isDark ? "moon" : "sun"}
           initial={{ scale: 0, rotate: -90, opacity: 0 }}
           animate={{ scale: 1, rotate: 0,   opacity: 1 }}

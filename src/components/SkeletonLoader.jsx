@@ -538,12 +538,8 @@ function DashboardSkeleton() {
 // ═══════════════════════════════════════════════════════════════════
 const SKELETON_MAP = {
   orders:    OrdersSkeleton,
-  income:    IncomeSkeleton,
-  profit:    ProfitSkeleton,
-  stock:     StockSkeleton,
   pending:   PendingSkeleton,
   expense:   ExpenseSkeleton,
-  repairing: RepairingSkeleton,
   employees: EmployeesSkeleton,
   dashboard: DashboardSkeleton,
 };

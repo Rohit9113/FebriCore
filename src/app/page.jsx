@@ -390,7 +390,7 @@ export default function HomePage() {
         {/* Status badge */}
         <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1, duration: 0.5 }} className="relative z-10 mb-8">
-          <AnimatePresence mode="wait">
+          <AnimatePresence>
             {isLoggedIn ? (
               <motion.div key="loggedin" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}>
                 <div className="inline-flex items-center gap-2.5 px-5 py-2.5 bg-emerald-500/10 border border-emerald-500/25 rounded-full text-emerald-400 text-xs font-bold shadow-lg shadow-emerald-500/10">
@@ -449,7 +449,7 @@ export default function HomePage() {
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.52, duration: 0.5 }}
             className="flex flex-col sm:flex-row items-center gap-3 mt-10 justify-center">
-            <AnimatePresence mode="wait">
+            <AnimatePresence>
               {isAdmin ? (
                 <motion.div key="admin-cta" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="flex flex-col sm:flex-row gap-3">
                   <MagneticButton href="/dashboard"

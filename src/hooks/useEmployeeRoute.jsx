@@ -1,8 +1,9 @@
 // src/hooks/useEmployeeRoute.jsx
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import { useRouter }                        from "next/navigation";
-import axios                                from "axios";
+import { useRouter } from "next/navigation";
+import axios from "axios";
+import employeeApi from "@/lib/employeeApi";
 
 // ── Employee localStorage keys ────────────────────────────────────
 const EMP_KEYS = ["emp_token", "emp_refresh_token", "emp_name", "emp_id", "emp_empId"];
@@ -13,10 +14,10 @@ const clearEmpStorage = () => {
 
 export default function useEmployeeRoute() {
   const router = useRouter();
-  const [empData,     setEmpData]     = useState(null);
-  const [loading,     setLoading]     = useState(true);
+  const [empData, setEmpData] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [deactivated, setDeactivated] = useState(false);
-  const [error,       setError]       = useState(null);
+  const [error, setError] = useState(null);
 
   // ── Logout ──────────────────────────────────────────────────────
   const logout = useCallback(() => {
@@ -52,8 +53,10 @@ export default function useEmployeeRoute() {
   }, []);
 
   // ── Verify employee with API ─────────────────────────────────────
+  // employeeApi use karo (raw axios nahi) — interceptor auto-refresh handle karta hai
   const verifyEmployee = useCallback(async (token) => {
-    const response = await axios.get("/api/employees/me", {
+    // Token explicitly set karo (latest token pass kiya ja raha hai)
+    const response = await employeeApi.get("/employees/me", {
       headers: { Authorization: `Bearer ${token}` },
     });
     return response.data;
@@ -76,10 +79,10 @@ export default function useEmployeeRoute() {
         if (result.success) {
           setEmpData({
             token,
-            name:     localStorage.getItem("emp_name"),
-            id:       localStorage.getItem("emp_id"),
-            empId:    localStorage.getItem("emp_empId"),
-            profile:  result.data.profile,
+            name: localStorage.getItem("emp_name"),
+            id: localStorage.getItem("emp_id"),
+            empId: localStorage.getItem("emp_empId"),
+            profile: result.data.profile,
             isActive: result.data.profile.isActive,
           });
           setDeactivated(false);
@@ -91,9 +94,9 @@ export default function useEmployeeRoute() {
           console.error("Employee verification error:", err);
         }
 
-        const status    = err.response?.status;
+        const status = err.response?.status;
         const errorCode = err.response?.data?.code;
-        const errorMsg  = err.response?.data?.error;
+        const errorMsg = err.response?.data?.error;
 
         if (status === 401 && errorCode === "TOKEN_EXPIRED") {
           const newToken = await refreshToken();
@@ -104,11 +107,11 @@ export default function useEmployeeRoute() {
 
               if (retryResult.success) {
                 setEmpData({
-                  token:    newToken,
-                  name:     localStorage.getItem("emp_name"),
-                  id:       localStorage.getItem("emp_id"),
-                  empId:    localStorage.getItem("emp_empId"),
-                  profile:  retryResult.data.profile,
+                  token: newToken,
+                  name: localStorage.getItem("emp_name"),
+                  id: localStorage.getItem("emp_id"),
+                  empId: localStorage.getItem("emp_empId"),
+                  profile: retryResult.data.profile,
                   isActive: retryResult.data.profile.isActive,
                 });
                 setDeactivated(false);

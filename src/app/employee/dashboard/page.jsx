@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence, useMotionValue, animate } from "framer-motion";
 import axios from "axios";
 import useEmployeeRoute from "@/hooks/useEmployeeRoute";
+import ChangePasswordModal from "@/components/ChangePasswordModal";
 
 // ─── API ─────────────────────────────────────────────────────────
 const api = axios.create({ baseURL: "/api" });
@@ -15,14 +16,21 @@ api.interceptors.request.use((cfg) => {
 
 // ─── Helpers ─────────────────────────────────────────────────────
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const NOW      = new Date();
-const TODAY    = NOW.toISOString().split("T")[0];
+const getToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 const fmtAmt   = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+const parseLocalDate = (d) => {
+  if (!d) return new Date(NaN);
+  const parts = String(d).split("-");
+  if (parts.length === 3) {
+    return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  }
+  return new Date(d);
+};
 const fmtDate  = (d) => {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  return parseLocalDate(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 };
-const fmtShort = (d) => new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+const fmtShort = (d) => parseLocalDate(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 
 const PAYS_PER_PAGE = 6;
 
@@ -64,7 +72,6 @@ function CoinBurst({ trigger }) {
   );
 }
 
-// ─── Salary slot-machine reveal ──────────────────────────────────
 function SalaryReveal({ amount, trigger }) {
   const mv = useMotionValue(0);
   const [display, setDisplay] = useState("0");
@@ -82,7 +89,7 @@ function SalaryReveal({ amount, trigger }) {
   return <span className="tabular-nums">₹{display}</span>;
 }
 
-// ─── CountUp (safe) ──────────────────────────────────────────────
+// ─── CountUp
 function CountUp({ to = 0, prefix = "" }) {
   const [val, setVal] = useState(0);
   const prev = useRef(null);
@@ -103,7 +110,7 @@ function CountUp({ to = 0, prefix = "" }) {
   return <span>{prefix}{val.toLocaleString("en-IN")}</span>;
 }
 
-// ─── Mini reusables ──────────────────────────────────────────────
+// ─── Mini
 const Card = ({ children, className = "" }) => (
   <div className={`bg-[#0f1120] border border-white/[0.07] rounded-2xl ${className}`}>{children}</div>
 );
@@ -126,13 +133,11 @@ const SK = ({ cls = "" }) => <div className={`bg-white/[0.05] rounded-xl animate
 function PaymentList({ pays }) {
   const [page, setPage] = useState(1);
 
-  // New to old (latest first)
   const sorted     = [...pays].sort((a, b) => (a.paidOn < b.paidOn ? 1 : -1));
   const totalPages = Math.ceil(sorted.length / PAYS_PER_PAGE);
   const startIdx   = (page - 1) * PAYS_PER_PAGE;
   const pageItems  = sorted.slice(startIdx, startIdx + PAYS_PER_PAGE);
 
-  // Reset to page 1 when pays changes
   useEffect(() => { setPage(1); }, [pays.length]);
 
   if (pays.length === 0) {
@@ -158,7 +163,7 @@ function PaymentList({ pays }) {
 
       {/* Payment rows */}
       <div className="divide-y divide-white/[0.05]">
-        <AnimatePresence mode="wait">
+        <AnimatePresence>
           <motion.div key={page}
             initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
@@ -220,7 +225,6 @@ function PaymentList({ pays }) {
           <div className="flex items-center gap-1.5">
             {Array.from({ length: totalPages }, (_, i) => i + 1).map(pg => {
               const isActive = pg === page;
-              // Show first, last, current, current±1
               const show = pg === 1 || pg === totalPages || Math.abs(pg - page) <= 1;
               if (!show) {
                 if (pg === 2 || pg === totalPages - 1) {
@@ -262,9 +266,7 @@ function PaymentList({ pays }) {
   );
 }
 
-// ════════════════════════════════════════════════════════════════
 //  MAIN DASHBOARD
-// ════════════════════════════════════════════════════════════════
 export default function EmployeeDashboard() {
   const { empData, loading: authLoading, logout } = useEmployeeRoute();
   const [data,     setData]     = useState(null);
@@ -272,12 +274,30 @@ export default function EmployeeDashboard() {
   const [error,    setError]    = useState("");
   const [tab,      setTab]      = useState("overview");
   const [burst,    setBurst]    = useState(false);
-  const [selMonth, setSelMonth] = useState(
-    `${NOW.getFullYear()}-${String(NOW.getMonth() + 1).padStart(2, "0")}`
-  );
+  const [showChangePw, setShowChangePw] = useState(false);
+
+  const [today, setToday] = useState(getToday);
+
+  useEffect(() => {
+    const tick = () => {
+      const fresh = getToday();
+      setToday(prev => {
+        if (prev !== fresh) {
+          setSelMonth(`${fresh.slice(0, 7)}`);
+          return fresh;
+        }
+        return prev;
+      });
+    };
+    const id = setInterval(tick, 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const NOW_DATE = new Date(today + "T00:00:00");
+  const [selMonth, setSelMonth] = useState(today.slice(0, 7));
 
   const months = Array.from({ length: 12 }, (_, i) => {
-    const d   = new Date(NOW.getFullYear(), NOW.getMonth() - i, 1);
+    const d   = new Date(NOW_DATE.getFullYear(), NOW_DATE.getMonth() - i, 1);
     const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     return { val, label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}` };
   });
@@ -294,26 +314,30 @@ export default function EmployeeDashboard() {
       if ([401, 403].includes(err?.response?.status)) logout();
       else setError(err?.response?.data?.error || "Server error");
     } finally { setFetching(false); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empData, selMonth]);
 
-  useEffect(() => { if (empData) fetchData(); }, [empData, selMonth]); // eslint-disable-line
+  useEffect(() => { if (empData) fetchData(); }, [empData, selMonth]);
 
   if (authLoading) return <FullLoader />;
 
-  const p    = data?.profile        || {};
-  const ss   = data?.salarySummary  || {};
-  const ms   = data?.monthSummary   || {};
-  const att  = data?.attendance     || { present: [], absent: [] };
-  const pays = data?.payments       || [];
-  const hist = data?.salaryHistory  || [];
+  const p         = data?.profile        || {};
+  const ss        = data?.salarySummary  || {};
+  const ms        = data?.monthSummary   || {};
+  const pays      = data?.payments       || [];
+  const hist      = data?.salaryHistory  || [];
+  const presentDates  = data?.presentDatesList  || [];
+  const absentDates   = data?.absentDatesList   || [];
+  const halfDayDates  = data?.halfDayDatesList  || [];
+  const overtimeDates = data?.overtimeDatesList || [];
+  const overtimeDetail = data?.overtimeDetail   || [];
 
   const selLabel     = months.find(m => m.val === selMonth)?.label || "";
   const paidPct      = ss?.totalEarned > 0 ? Math.round((ss.totalPaid / ss.totalEarned) * 100) : 0;
-  const todayPresent = att.present?.includes(TODAY);
-  const todayAbsent  = att.absent?.includes(TODAY);
-  const monthPresent = att.present?.filter(d => d.startsWith(selMonth)) || [];
-  const monthAbsent  = att.absent?.filter(d => d.startsWith(selMonth))  || [];
+
+  // ── BUG FIX: pehle att.present/att.absent se check hota tha (always []) ──
+  const todayPresent = presentDates.includes(today) || overtimeDates.includes(today) || halfDayDates.includes(today);
+  const todayAbsent  = absentDates.includes(today);
+
 
   return (
     <div className="min-h-screen bg-[#080a12]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -489,7 +513,7 @@ export default function EmployeeDashboard() {
 
                 {/* TODAY BANNER */}
                 <Fade delay={0.1}>
-                  <AnimatePresence mode="wait">
+                  <AnimatePresence>
                     {todayPresent ? (
                       <motion.div key="p" initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }}
                         className="flex items-center gap-3 bg-emerald-500/8 border border-emerald-500/20 rounded-2xl px-4 py-3.5">
@@ -498,7 +522,7 @@ export default function EmployeeDashboard() {
                           className="text-2xl">✅</motion.span>
                         <div>
                           <p className="text-emerald-400 font-black text-sm">Aaj Present Hai 🎯</p>
-                          <p className="text-[#3d4870] text-xs mt-0.5">{fmtDate(TODAY)} · {fmtAmt(p?.perDaySalary)} milega</p>
+                          <p className="text-[#3d4870] text-xs mt-0.5">{fmtDate(today)} · {fmtAmt(p?.perDaySalary)} milega</p>
                         </div>
                       </motion.div>
                     ) : todayAbsent ? (
@@ -507,7 +531,7 @@ export default function EmployeeDashboard() {
                         <span className="text-2xl">❌</span>
                         <div>
                           <p className="text-red-400 font-black text-sm">Aaj Absent Hai</p>
-                          <p className="text-[#3d4870] text-xs mt-0.5">{fmtDate(TODAY)}</p>
+                          <p className="text-[#3d4870] text-xs mt-0.5">{fmtDate(today)}</p>
                         </div>
                       </motion.div>
                     ) : (
@@ -517,7 +541,7 @@ export default function EmployeeDashboard() {
                           className="text-2xl">⏳</motion.span>
                         <div>
                           <p className="text-amber-400 font-black text-sm">Aaj Ka Attendance Pending</p>
-                          <p className="text-[#3d4870] text-xs mt-0.5">{fmtDate(TODAY)}</p>
+                          <p className="text-[#3d4870] text-xs mt-0.5">{fmtDate(today)}</p>
                         </div>
                       </motion.div>
                     )}
@@ -533,16 +557,10 @@ export default function EmployeeDashboard() {
                       </p>
                       <div className="grid grid-cols-2 gap-2.5">
                         {[
-                          { icon:"✅", label:"Present", value:`${ms.presentDays||0} din`, sub:fmtAmt(ms.earned),
+                          { icon:"✅", label:"Present",  value:`${ms.presentDays||0} din`,  sub:fmtAmt(ms.totalEarned),
                             cls:"bg-emerald-500/8 border-emerald-500/15 text-emerald-400" },
-                          { icon:"❌", label:"Absent",  value:`${ms.absentDays||0} din`,  sub:"salary nahi",
+                          { icon:"❌", label:"Absent",   value:`${ms.absentDays||0} din`,   sub:"salary nahi",
                             cls:"bg-red-500/8 border-red-500/15 text-red-400" },
-                          { icon:"💰", label:"Mila",    value:fmtAmt(ms.paid),             sub:selLabel,
-                            cls:"bg-blue-500/8 border-blue-500/15 text-blue-300" },
-                          { icon:"⏳", label:"Baaki",
-                            value:ms.due>0?fmtAmt(ms.due):"Sab Mila ✓",
-                            sub:ms.due>0?"pending":"clear!",
-                            cls:ms.due>0?"bg-orange-500/8 border-orange-500/18 text-orange-400":"bg-emerald-500/8 border-emerald-500/15 text-emerald-400" },
                         ].map((s, i) => (
                           <motion.div key={s.label}
                             initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }}
@@ -618,7 +636,7 @@ export default function EmployeeDashboard() {
                 </Fade>
 
                 {/* TAB CONTENT */}
-                <AnimatePresence mode="wait">
+                <AnimatePresence>
 
                   {/* ── OVERVIEW ── */}
                   {tab === "overview" && (
@@ -647,12 +665,14 @@ export default function EmployeeDashboard() {
                           <InfoRow label="Total Paid ✓" value={fmtAmt(ss?.totalPaid)}             />
                           <InfoRow label="Total Due ⏳"  value={fmtAmt(ss?.totalDue)} highlight={ss?.totalDue > 0} />
                         </div>
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
+                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
                           {[
-                            { label: "Present Days", val: `${ss?.totalPresentDays||0}`, unit: "din",  color: "text-emerald-400" },
-                            { label: "Absent Days",  val: `${ss?.totalAbsentDays||0}`,  unit: "din",  color: "text-red-400"     },
-                            { label: "Payments",     val: `${ss?.paymentCount||0}`,     unit: "baar", color: "text-blue-300"    },
-                            { label: "Per Day Rate", val: fmtAmt(ss?.perDaySalary),     unit: "/din", color: "text-amber-400"   },
+                            { label: "Present Days",  val: `${ss?.totalPresentDays||0}`,  unit: "din",  color: "text-emerald-400" },
+                            { label: "Half Days",     val: `${ss?.totalHalfDays||0}`,      unit: "din",  color: "text-yellow-400"  },
+                            { label: "Overtime Days", val: `${ss?.totalOvertimeDays||0}`,  unit: "din",  color: "text-purple-400"  },
+                            { label: "Absent Days",   val: `${ss?.totalAbsentDays||0}`,    unit: "din",  color: "text-red-400"     },
+                            { label: "Payments",      val: `${ss?.paymentCount||0}`,       unit: "baar", color: "text-blue-300"    },
+                            { label: "Per Day Rate",  val: fmtAmt(ss?.perDaySalary),       unit: "/din", color: "text-amber-400"   },
                           ].map(s => (
                             <div key={s.label} className="bg-white/[0.03] border border-white/[0.05] rounded-xl p-3">
                               <p className={`font-black text-lg ${s.color}`}>{s.val}<span className="text-xs font-normal text-[#4a5580] ml-1">{s.unit}</span></p>
@@ -704,15 +724,24 @@ export default function EmployeeDashboard() {
                       <div className="lg:grid lg:grid-cols-2 lg:gap-5 space-y-4 lg:space-y-0">
                         <Card className="p-5">
                           <SecTitle icon="📅" title={`${selLabel} — Calendar`} />
-                          <AttendanceCalendar month={selMonth} present={att.present} absent={att.absent} />
+                          <AttendanceCalendar
+                            month={selMonth}
+                            present={presentDates}
+                            absent={absentDates}
+                            halfDay={halfDayDates}
+                            overtime={overtimeDates}
+                            today={today}
+                          />
                         </Card>
                         <div className="space-y-4">
                           {ms && (
-                            <div className="grid grid-cols-3 gap-2.5">
+                            <div className="grid grid-cols-2 gap-2.5">
                               {[
-                                { val: ms.presentDays||0, label:"Present", cls:"bg-emerald-500/10 border-emerald-500/12 text-emerald-400" },
-                                { val: ms.absentDays||0,  label:"Absent",  cls:"bg-red-500/10 border-red-500/12 text-red-400"            },
-                                { val: fmtAmt(ms.earned), label:"Kamai",   cls:"bg-blue-500/10 border-blue-500/12 text-blue-300", sm:true },
+                                { val: ms.presentDays||0,       label:"Present",  cls:"bg-emerald-500/10 border-emerald-500/12 text-emerald-400" },
+                                { val: ms.halfDayDays||0,        label:"Half Day", cls:"bg-yellow-500/10 border-yellow-500/12 text-yellow-400"   },
+                                { val: ms.overtimeDays||0,       label:"Overtime", cls:"bg-purple-500/10 border-purple-500/12 text-purple-400"   },
+                                { val: ms.absentDays||0,         label:"Absent",   cls:"bg-red-500/10 border-red-500/12 text-red-400"            },
+                                { val: fmtAmt(ms.totalEarned),   label:"Kamai",    cls:"bg-blue-500/10 border-blue-500/12 text-blue-300", sm:true },
                               ].map(s => (
                                 <div key={s.label} className={`rounded-2xl border p-4 text-center ${s.cls}`}>
                                   <p className={`font-black leading-tight ${s.sm ? "text-base mt-1" : "text-3xl"}`}>{s.val}</p>
@@ -721,27 +750,43 @@ export default function EmployeeDashboard() {
                               ))}
                             </div>
                           )}
-                          <Card className="p-4">
-                            <SecTitle icon="✅" title={`Present — ${monthPresent.length} din`} />
-                            <DateChips dates={monthPresent}
-                              cls="bg-emerald-500/12 border border-emerald-500/18 text-emerald-400"
-                              empty="Is mahine koi present record nahi" />
-                          </Card>
-                          <Card className="p-4">
-                            <SecTitle icon="❌" title={`Absent — ${monthAbsent.length} din`} />
-                            <DateChips dates={monthAbsent}
-                              cls="bg-red-500/10 border border-red-500/15 text-red-400"
-                              empty="Is mahine koi absent record nahi" />
-                          </Card>
+
+                          {/* Overtime Detail */}
+                          {overtimeDetail.length > 0 && (
+                            <Card className="p-4">
+                              <SecTitle icon="⏱" title={`Overtime Details (${overtimeDetail.length})`} />
+                              <div className="space-y-2 max-h-64 overflow-y-auto pr-1 scrollbar-hide">
+                                {overtimeDetail.map((ot, i) => (
+                                  <motion.div key={ot.date}
+                                    initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: i * 0.05 }}
+                                    className="flex items-center justify-between bg-purple-500/8 border border-purple-500/15 rounded-xl px-3 py-2.5">
+                                    <div className="flex items-center gap-2.5">
+                                      <div className="w-8 h-8 rounded-xl bg-purple-500/15 border border-purple-500/20 flex items-center justify-center text-sm flex-shrink-0">
+                                        ⏱
+                                      </div>
+                                      <div>
+                                        <p className="text-white text-xs font-bold">{fmtDate(ot.date)}</p>
+                                        <p className="text-[#4a5580] text-[10px] mt-0.5">
+                                          {ot.overtimeAmount > 0
+                                            ? `Custom: +₹${ot.overtimeAmount.toLocaleString("en-IN")}`
+                                            : ot.overtimeHours > 0
+                                            ? `${ot.overtimeHours}h extra kaam`
+                                            : "Overtime"}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="text-purple-400 font-black text-sm">{fmtAmt(ot.earned)}</p>
+                                      <p className="text-[#4a5580] text-[10px]">aaj ka total</p>
+                                    </div>
+                                  </motion.div>
+                                ))}
+                              </div>
+                            </Card>
+                          )}
                         </div>
                       </div>
-                      <Card className="p-4">
-                        <SecTitle icon="📊" title="Total Attendance — Sab Mahine" />
-                        <div className="grid grid-cols-2 gap-3">
-                          <InfoRow label="Total Present" value={`${ss?.totalPresentDays||0} din`} />
-                          <InfoRow label="Total Absent"  value={`${ss?.totalAbsentDays||0} din`}  />
-                        </div>
-                      </Card>
                     </motion.div>
                   )}
 
@@ -770,16 +815,10 @@ export default function EmployeeDashboard() {
                             <p className="text-[10px] text-[#4a5580] uppercase tracking-wide mb-2">{selLabel}</p>
                             <div className="flex gap-3 text-sm">
                               <div>
-                                <p className="text-white font-black">{fmtAmt(ms.paid)}</p>
+                                <p className="text-white font-black">{fmtAmt(ms.totalPaid)}</p>
                                 <p className="text-[10px] text-[#4a5580] mt-0.5">Mila</p>
                               </div>
                               <div className="w-px bg-white/[0.06]" />
-                              <div>
-                                <p className={`font-black ${ms.due>0?"text-orange-400":"text-emerald-400"}`}>
-                                  {ms.due>0 ? fmtAmt(ms.due) : "Clear ✓"}
-                                </p>
-                                <p className="text-[10px] text-[#4a5580] mt-0.5">Baaki</p>
-                              </div>
                             </div>
                           </Card>
                         )}
@@ -832,6 +871,19 @@ export default function EmployeeDashboard() {
                           <InfoRow label="Joined"      value={fmtDate(p?.joiningDate)}           />
                           <InfoRow label="Salary"      value={`${fmtAmt(p?.perDaySalary)}/din`} highlight />
                           <InfoRow label="Status"      value={p?.isActive ? "Active ✅" : "Inactive ❌"} last />
+
+                          {/* Change Password Button */}
+                          <motion.button
+                            whileTap={{ scale: 0.97 }}
+                            onClick={() => setShowChangePw(true)}
+                            className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-sm transition-all"
+                            style={{
+                              background: "rgba(59,130,246,0.08)",
+                              border: "1px solid rgba(59,130,246,0.2)",
+                              color: "#3b82f6",
+                            }}>
+                            🔑 Password Change Karo
+                          </motion.button>
                         </Card>
 
                         {hist.length > 0 && (
@@ -879,17 +931,29 @@ export default function EmployeeDashboard() {
           </>
         )}
       </div>
+
+      {/* ── Change Password Modal ─────────────────────────────── */}
+      <AnimatePresence>
+        {showChangePw && (
+          <ChangePasswordModal
+            empToken={empData?.token}
+            onClose={() => setShowChangePw(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
 // ── AttendanceCalendar ───────────────────────────────────────────
-function AttendanceCalendar({ month, present, absent }) {
+function AttendanceCalendar({ month, present, absent, halfDay = [], overtime = [], today = getToday() }) {
   const [year, mon] = month.split("-").map(Number);
   const firstDay    = new Date(year, mon - 1, 1).getDay();
   const daysInMonth = new Date(year, mon, 0).getDate();
   const preSet = new Set(present);
   const absSet = new Set(absent);
+  const hdSet  = new Set(halfDay);
+  const otSet  = new Set(overtime);
   return (
     <div>
       <div className="grid grid-cols-7 gap-1 mb-1">
@@ -902,23 +966,59 @@ function AttendanceCalendar({ month, present, absent }) {
         {Array.from({ length: daysInMonth }, (_,i) => {
           const day  = i + 1;
           const date = `${year}-${String(mon).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-          const isPre = preSet.has(date), isAbs = absSet.has(date), isTdy = date === TODAY;
+          const isPre = preSet.has(date);
+          const isAbs = absSet.has(date);
+          const isHD  = hdSet.has(date);
+          const isOT  = otSet.has(date);
+          const isTdy = date === today;
           return (
             <motion.div key={date}
               initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: i * 0.01, type: "spring", stiffness: 280, damping: 20 }}
-              className={`aspect-square flex items-center justify-center text-xs font-bold rounded-xl
+              className={`aspect-square flex flex-col items-center justify-center rounded-xl relative
                 ${isPre ? "bg-emerald-500/22 text-emerald-400 border border-emerald-500/20"
+                : isOT  ? "bg-purple-500/22 text-purple-400 border border-purple-500/20"
+                : isHD  ? "bg-yellow-500/22 text-yellow-400 border border-yellow-500/20"
                 : isAbs ? "bg-red-500/18 text-red-400 border border-red-500/15"
                 : isTdy ? "border-2 border-amber-400/50 text-amber-400"
                 : "text-[#2c3455]"}`}
-            >{day}</motion.div>
+            >
+              {isPre ? (
+                <>
+                  <span className="text-[9px] font-black leading-none">✓</span>
+                  <span className="text-[9px] font-bold leading-none mt-0.5">{day}</span>
+                </>
+              ) : isOT ? (
+                <>
+                  <span className="text-[8px] font-black leading-none">OT</span>
+                  <span className="text-[9px] font-bold leading-none mt-0.5">{day}</span>
+                </>
+              ) : isHD ? (
+                <>
+                  <span className="text-[9px] font-black leading-none">½</span>
+                  <span className="text-[9px] font-bold leading-none mt-0.5">{day}</span>
+                </>
+              ) : isAbs ? (
+                <span className="relative flex items-center justify-center w-full h-full">
+                  <span className="text-[11px] font-bold">{day}</span>
+                  {/* Cross line */}
+                  <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <span className="block w-[70%] h-[1.5px] bg-red-400/80 rotate-45 rounded-full absolute" />
+                    <span className="block w-[70%] h-[1.5px] bg-red-400/80 -rotate-45 rounded-full absolute" />
+                  </span>
+                </span>
+              ) : (
+                <span className="text-[11px] font-bold">{day}</span>
+              )}
+            </motion.div>
           );
         })}
       </div>
-      <div className="flex gap-4 mt-3 justify-center">
+      <div className="flex flex-wrap gap-3 mt-3 justify-center">
         {[
           { cls:"bg-emerald-500/22 border border-emerald-500/20", label:"Present" },
+          { cls:"bg-yellow-500/22 border border-yellow-500/20",   label:"Half Day" },
+          { cls:"bg-purple-500/22 border border-purple-500/20",   label:"Overtime" },
           { cls:"bg-red-500/18 border border-red-500/15",         label:"Absent"  },
           { cls:"border-2 border-amber-400/50",                   label:"Aaj"     },
         ].map(l => (
