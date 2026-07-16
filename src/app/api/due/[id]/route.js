@@ -2,6 +2,7 @@
 import { connectDB }   from "@/lib/db";
 import CustomerDue     from "@/app/api/due/models/CustomerDue";
 import { verifyAdmin } from "@/app/api/middleware/auth";
+import { validateAndProcessItems } from "@/app/api/due/itemUtils";
 
 // ── GET /api/due/[id] ─────────────────────────────────────────────
 export const GET = verifyAdmin(async (req, context) => {
@@ -45,16 +46,14 @@ export const PATCH = verifyAdmin(async (req, context) => {
     if (body.description !== undefined) customer.description = body.description?.trim() || "";
     if (body.workDate)    customer.workDate    = body.workDate;
 
-    // Update items if provided
+    // Update items if provided — weight x rate/kg ya fixed contract amount
     if (body.items && Array.isArray(body.items) && body.items.length > 0) {
-      customer.items = body.items.map((item) => ({
-        name:  item.name?.trim() || "Item",
-        qty:   Number(item.qty)   || 0,
-        unit:  item.unit?.trim()  || "pcs",
-        price: Number(item.price) || 0,
-        total: Math.round((Number(item.qty) || 0) * (Number(item.price) || 0)),
-      }));
-      customer.totalAmount = customer.items.reduce((s, i) => s + i.total, 0);
+      const { items: processedItems, error: itemsError } = validateAndProcessItems(body.items);
+      if (itemsError) {
+        return Response.json({ success: false, error: itemsError }, { status: 400 });
+      }
+      customer.items = processedItems;
+      customer.totalAmount = processedItems.reduce((s, i) => s + i.total, 0);
     }
 
     await customer.save(); // pre-save hook recalculates dueAmount + status

@@ -3,11 +3,24 @@ import mongoose from "mongoose";
 
 const ItemSchema = new mongoose.Schema(
   {
-    name:     { type: String, required: true, trim: true }, // e.g. "Grill", "Gate"
-    qty:      { type: Number, required: true, min: 0 },     // e.g. 5
-    unit:     { type: String, default: "pcs", trim: true }, // pcs, kg, ft, etc.
-    price:    { type: Number, required: true, min: 0 },     // price per unit
-    total:    { type: Number, required: true, min: 0 },     // qty * price
+    name: { type: String, required: true, trim: true },
+
+    pieces: { type: Number, default: 1, min: 0 },
+    pricingType: {
+      type:    String,
+      enum:    ["perKg", "contract"],
+      default: "perKg",
+    },
+
+    // ── perKg fields ────────────────────────────────────────────
+    weightKg:  { type: Number, default: 0, min: 0 },
+    ratePerKg: { type: Number, default: 0, min: 0 },
+
+    // ── contract field ──────────────────────────────────────────
+    contractAmount: { type: Number, default: 0, min: 0 }, 
+
+    // ── computed
+    total: { type: Number, required: true, min: 0 },
   },
   { _id: false }
 );
@@ -27,27 +40,25 @@ const CustomerDueSchema = new mongoose.Schema(
     name:        { type: String, required: true, trim: true },
     phone:       { type: String, required: true, trim: true },
     address:     { type: String, default: "", trim: true },
-    description: { type: String, default: "", trim: true }, // extra notes
+    description: { type: String, default: "", trim: true },
 
-    // ── Work / Items ──────────────────────────────────────────────
-    items: [ItemSchema], // [ { name, qty, unit, price, total } ]
+    items: [ItemSchema],
 
-    // ── Financials ────────────────────────────────────────────────
     totalAmount:  { type: Number, required: true, min: 0, default: 0 },
     paidAmount:   { type: Number, default: 0, min: 0 },
     dueAmount:    { type: Number, default: 0, min: 0 },
 
-    // ── Payment History ───────────────────────────────────────────
+    // ── Payment History 
     payments: [PaymentSchema],
 
-    // ── Status ────────────────────────────────────────────────────
+    // ── Status 
     status: {
       type:    String,
       enum:    ["due", "partial", "paid"],
       default: "due",
     },
 
-    // ── Work Date ─────────────────────────────────────────────────
+    // ── Work Date 
     workDate: {
       type:    String,
       default: () => new Date().toISOString().split("T")[0],
@@ -58,7 +69,6 @@ const CustomerDueSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Auto-calculate dueAmount + status before save
 CustomerDueSchema.pre("save", function (next) {
   this.dueAmount  = Math.max(0, this.totalAmount - this.paidAmount);
   if      (this.paidAmount <= 0)                   this.status = "due";

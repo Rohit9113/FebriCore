@@ -2,6 +2,7 @@
 import { connectDB }   from "@/lib/db";
 import CustomerDue     from "./models/CustomerDue";
 import { verifyAdmin } from "@/app/api/middleware/auth";
+import { validateAndProcessItems } from "./itemUtils";
 
 // ── GET /api/due ──────────────────────────────────────────────────
 export const GET = verifyAdmin(async (req) => {
@@ -66,21 +67,11 @@ export const POST = verifyAdmin(async (req) => {
       );
     }
 
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return Response.json(
-        { success: false, error: "Kam se kam ek item required hai" },
-        { status: 400 }
-      );
+    // Weight x rate/kg, ya fixed contract amount — dono support hain
+    const { items: processedItems, error: itemsError } = validateAndProcessItems(items);
+    if (itemsError) {
+      return Response.json({ success: false, error: itemsError }, { status: 400 });
     }
-
-    // Calculate item totals + grand total
-    const processedItems = items.map((item) => ({
-      name:  item.name?.trim() || "Item",
-      qty:   Number(item.qty)   || 0,
-      unit:  item.unit?.trim()  || "pcs",
-      price: Number(item.price) || 0,
-      total: Math.round((Number(item.qty) || 0) * (Number(item.price) || 0)),
-    }));
 
     const totalAmount = processedItems.reduce((s, i) => s + i.total, 0);
 

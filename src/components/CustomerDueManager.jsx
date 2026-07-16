@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
+import { downloadBill } from "@/components/BillPDF";
 
-// ── API instance ──────────────────────────────────────────────────
+// ── API ──────────────────────────────────────────────────
 const api = axios.create({ baseURL: "/api" });
 api.interceptors.request.use((cfg) => {
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -55,10 +56,20 @@ function useToast() {
   return { show, ToastContainer };
 }
 
-// ── Empty Item ────────────────────────────────────────────────────
-const emptyItem = () => ({ name: "", qty: "", unit: "pcs", price: "" });
+const emptyItem = () => ({
+  name:           "",
+  pieces:         "1",
+  pricingType:    "perKg",
+  weightKg:       "",
+  ratePerKg:      "",
+  contractAmount: "",
+});
 
-// ── Add / Edit Customer Modal ─────────────────────────────────────
+const itemLineTotal = (it) =>
+  it.pricingType === "contract"
+    ? (Number(it.contractAmount) || 0)
+    : (Number(it.weightKg) || 0) * (Number(it.ratePerKg) || 0);
+
 function CustomerModal({ existing, onClose, onSave }) {
   const isEdit = !!existing;
   const [form, setForm] = useState({
@@ -70,7 +81,14 @@ function CustomerModal({ existing, onClose, onSave }) {
   });
   const [items, setItems] = useState(
     existing?.items?.length
-      ? existing.items.map((i) => ({ ...i, qty: String(i.qty), price: String(i.price) }))
+      ? existing.items.map((i) => ({
+          name:           i.name || "",
+          pieces:         String(i.pieces ?? 1),
+          pricingType:    i.pricingType === "contract" ? "contract" : "perKg",
+          weightKg:       String(i.weightKg ?? ""),
+          ratePerKg:      String(i.ratePerKg ?? ""),
+          contractAmount: String(i.contractAmount ?? ""),
+        }))
       : [emptyItem()]
   );
   const [saving, setSaving] = useState(false);
@@ -84,19 +102,21 @@ function CustomerModal({ existing, onClose, onSave }) {
   const addItem    = () => setItems((p) => [...p, emptyItem()]);
   const removeItem = (i) => setItems((p) => p.filter((_, idx) => idx !== i));
 
-  const grandTotal = items.reduce((s, it) => {
-    const t = (Number(it.qty) || 0) * (Number(it.price) || 0);
-    return s + t;
-  }, 0);
+  const grandTotal = items.reduce((s, it) => s + itemLineTotal(it), 0);
 
   const handleSave = async () => {
     setError("");
     if (!form.name.trim() || !form.phone.trim()) {
       setError("Name aur phone required hain"); return;
     }
-    const validItems = items.filter((i) => i.name.trim() && Number(i.qty) > 0 && Number(i.price) >= 0);
+    const validItems = items.filter((i) => {
+      if (!i.name.trim()) return false;
+      return i.pricingType === "contract"
+        ? Number(i.contractAmount) > 0
+        : Number(i.weightKg) > 0 && Number(i.ratePerKg) > 0;
+    });
     if (validItems.length === 0) {
-      setError("Kam se kam ek valid item required hai"); return;
+      setError("Kam se kam ek valid item required hai — weight+rate ya contract amount daalo"); return;
     }
     setSaving(true);
     try {
@@ -183,46 +203,68 @@ function CustomerModal({ existing, onClose, onSave }) {
               </div>
 
               <div className="space-y-3">
-                {/* Header */}
-                <div className="grid grid-cols-12 gap-2 px-1">
-                  <span className="col-span-4 text-[10px] text-gray-600 uppercase font-bold">Item Name</span>
-                  <span className="col-span-2 text-[10px] text-gray-600 uppercase font-bold">Qty</span>
-                  <span className="col-span-2 text-[10px] text-gray-600 uppercase font-bold">Unit</span>
-                  <span className="col-span-3 text-[10px] text-gray-600 uppercase font-bold">Price/unit</span>
-                  <span className="col-span-1"></span>
-                </div>
-
                 <AnimatePresence>
                   {items.map((item, i) => {
-                    const lineTotal = (Number(item.qty) || 0) * (Number(item.price) || 0);
+                    const lineTotal   = itemLineTotal(item);
+                    const isContract  = item.pricingType === "contract";
                     return (
                       <motion.div key={i}
                         initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
                         className="bg-[#06080f] border border-[#1e2235] rounded-xl p-3 space-y-2">
+
+                        {/* Row 1 — name + pieces + pricing type toggle + remove */}
                         <div className="grid grid-cols-12 gap-2 items-center">
                           <input value={item.name} onChange={(e) => setItem(i, "name", e.target.value)}
                             placeholder="e.g. Grill, Gate..."
-                            className="col-span-4 bg-transparent border border-[#1e2235] focus:border-amber-500/40 rounded-lg px-3 py-2 text-white placeholder-[#2e3248] outline-none text-xs" />
-                          <input value={item.qty} onChange={(e) => setItem(i, "qty", e.target.value)}
-                            placeholder="5" type="number" min="0"
-                            className="col-span-2 bg-transparent border border-[#1e2235] focus:border-amber-500/40 rounded-lg px-3 py-2 text-white placeholder-[#2e3248] outline-none text-xs" />
-                          <select value={item.unit} onChange={(e) => setItem(i, "unit", e.target.value)}
-                            className="col-span-2 bg-[#0d0f1e] border border-[#1e2235] focus:border-amber-500/40 rounded-lg px-2 py-2 text-white outline-none text-xs">
-                            {["kg", "ft"].map((u) => (
-                              <option key={u} value={u}>{u}</option>
-                            ))}
-                          </select>
-                          <input value={item.price} onChange={(e) => setItem(i, "price", e.target.value)}
-                            placeholder="0" type="number" min="0"
-                            className="col-span-3 bg-transparent border border-[#1e2235] focus:border-amber-500/40 rounded-lg px-3 py-2 text-white placeholder-[#2e3248] outline-none text-xs" />
+                            className="col-span-5 bg-transparent border border-[#1e2235] focus:border-amber-500/40 rounded-lg px-3 py-2 text-white placeholder-[#2e3248] outline-none text-xs" />
+                          <input value={item.pieces} onChange={(e) => setItem(i, "pieces", e.target.value)}
+                            placeholder="Pieces" type="number" min="0" title="Kitne piece bane (reference — price mein use nahi hota)"
+                            className="col-span-2 bg-transparent border border-[#1e2235] focus:border-amber-500/40 rounded-lg px-2 py-2 text-white placeholder-[#2e3248] outline-none text-xs text-center" />
+                          <div className="col-span-4 flex bg-[#0d0f1e] border border-[#1e2235] rounded-lg overflow-hidden text-[10px] font-bold">
+                            <button type="button" onClick={() => setItem(i, "pricingType", "perKg")}
+                              className={`flex-1 py-2 transition ${!isContract ? "bg-amber-500/20 text-amber-400" : "text-gray-500 hover:text-gray-300"}`}>
+                              ⚖️ Per Kg
+                            </button>
+                            <button type="button" onClick={() => setItem(i, "pricingType", "contract")}
+                              className={`flex-1 py-2 transition ${isContract ? "bg-amber-500/20 text-amber-400" : "text-gray-500 hover:text-gray-300"}`}>
+                              📝 Contract
+                            </button>
+                          </div>
                           <button onClick={() => removeItem(i)} disabled={items.length === 1}
                             className="col-span-1 text-red-400/60 hover:text-red-400 transition text-base disabled:opacity-20 flex items-center justify-center">✕</button>
                         </div>
+
+                        {/* Row 2 — pricing fields, depends on pricingType */}
+                        {isContract ? (
+                          <div className="grid grid-cols-12 gap-2">
+                            <div className="col-span-12 relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-500/60 text-xs">₹</span>
+                              <input value={item.contractAmount} onChange={(e) => setItem(i, "contractAmount", e.target.value)}
+                                placeholder="Fixed contract amount" type="number" min="0"
+                                className="w-full bg-transparent border border-[#1e2235] focus:border-amber-500/40 rounded-lg pl-7 pr-3 py-2 text-white placeholder-[#2e3248] outline-none text-xs" />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-12 gap-2">
+                            <input value={item.weightKg} onChange={(e) => setItem(i, "weightKg", e.target.value)}
+                              placeholder="Total weight (kg)" type="number" min="0"
+                              className="col-span-6 bg-transparent border border-[#1e2235] focus:border-amber-500/40 rounded-lg px-3 py-2 text-white placeholder-[#2e3248] outline-none text-xs" />
+                            <div className="col-span-6 relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-500/60 text-xs">₹</span>
+                              <input value={item.ratePerKg} onChange={(e) => setItem(i, "ratePerKg", e.target.value)}
+                                placeholder="Rate per kg" type="number" min="0"
+                                className="w-full bg-transparent border border-[#1e2235] focus:border-amber-500/40 rounded-lg pl-7 pr-3 py-2 text-white placeholder-[#2e3248] outline-none text-xs" />
+                            </div>
+                          </div>
+                        )}
+
                         {lineTotal > 0 && (
                           <div className="flex justify-end">
                             <span className="text-[11px] text-amber-400/70 font-semibold">
-                              {item.qty} {item.unit} × ₹{item.price} = <span className="text-amber-400">{fmt(lineTotal)}</span>
+                              {isContract
+                                ? <>Contract = <span className="text-amber-400">{fmt(lineTotal)}</span></>
+                                : <>{item.weightKg}kg × ₹{item.ratePerKg}/kg = <span className="text-amber-400">{fmt(lineTotal)}</span></>}
                             </span>
                           </div>
                         )}
@@ -415,6 +457,18 @@ function PaymentModal({ customer, onClose, onPaid }) {
 // ── Customer Detail Drawer ────────────────────────────────────────
 function CustomerDrawer({ customer, onClose, onEdit, onPayment, onDelete }) {
   const sc = STATUS_CONFIG[customer.status] || STATUS_CONFIG.due;
+  const [billLoading, setBillLoading] = useState(false);
+
+  const handleDownloadBill = async () => {
+    setBillLoading(true);
+    try {
+      await downloadBill(customer);
+    } catch (err) {
+      console.error("Bill download error:", err);
+    } finally {
+      setBillLoading(false);
+    }
+  };
 
   return (
     <>
@@ -462,6 +516,20 @@ function CustomerDrawer({ customer, onClose, onEdit, onPayment, onDelete }) {
             </div>
           </div>
 
+          {/* Bill download button */}
+          <motion.button whileTap={{ scale: 0.97 }} onClick={handleDownloadBill} disabled={billLoading}
+            className="w-full py-3 rounded-xl font-bold text-sm text-white disabled:opacity-60 flex items-center justify-center gap-2"
+            style={{ background: "linear-gradient(135deg,#3b82f6,#1d4ed8)", boxShadow: "0 4px 20px rgba(59,130,246,0.2)" }}>
+            {billLoading ? (
+              <>
+                <motion.div animate={{ rotate: 360 }}
+                  transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
+                  className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
+                Bill Bana Rahe Hain...
+              </>
+            ) : "🧾 Bill Download Karo"}
+          </motion.button>
+
           {/* Pay button */}
           {customer.dueAmount > 0 && (
             <motion.button whileTap={{ scale: 0.97 }} onClick={onPayment}
@@ -497,8 +565,14 @@ function CustomerDrawer({ customer, onClose, onEdit, onPayment, onDelete }) {
               {(customer.items || []).map((item, i) => (
                 <div key={i} className="bg-[#06080f] border border-[#1e2235] rounded-xl px-4 py-3 flex justify-between items-center">
                   <div>
-                    <p className="text-white text-sm font-semibold">{item.name}</p>
-                    <p className="text-gray-500 text-xs">{item.qty} {item.unit} × {fmt(item.price)}</p>
+                    <p className="text-white text-sm font-semibold">
+                      {item.name}{item.pieces > 1 ? ` (${item.pieces} pcs)` : ""}
+                    </p>
+                    <p className="text-gray-500 text-xs">
+                      {item.pricingType === "contract"
+                        ? "Fixed contract"
+                        : `${item.weightKg}kg × ₹${item.ratePerKg}/kg`}
+                    </p>
                   </div>
                   <p className="text-amber-400 font-bold text-sm">{fmt(item.total)}</p>
                 </div>
@@ -720,7 +794,9 @@ export default function CustomerDueManager() {
                 <div className="space-y-1 mb-3">
                   {(c.items || []).slice(0, 2).map((item, i) => (
                     <div key={i} className="flex justify-between text-xs">
-                      <span className="text-gray-400">{item.name} ({item.qty} {item.unit})</span>
+                      <span className="text-gray-400">
+                        {item.name} ({item.pricingType === "contract" ? "Contract" : `${item.weightKg}kg`})
+                      </span>
                       <span className="text-gray-300">{fmt(item.total)}</span>
                     </div>
                   ))}
@@ -748,14 +824,24 @@ export default function CustomerDueManager() {
                 {/* Work date */}
                 <p className="text-gray-600 text-[10px] mt-2 text-right">{fmtDate(c.workDate)}</p>
 
-                {/* Pay button on card */}
-                {c.dueAmount > 0 && (
-                  <button onClick={(e) => { e.stopPropagation(); setPayCustomer(c); }}
-                    className="mt-3 w-full py-2 rounded-xl text-xs font-bold text-white transition"
-                    style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.25)" }}>
-                    💰 Payment Lo
+                {/* Bill + Pay buttons on card */}
+                <div className="mt-3 flex gap-2">
+                  <button onClick={async (e) => {
+                      e.stopPropagation();
+                      try { await downloadBill(c); } catch (err) { console.error("Bill download error:", err); }
+                    }}
+                    className="flex-1 py-2 rounded-xl text-xs font-bold text-white transition"
+                    style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.25)" }}>
+                    🧾 Bill
                   </button>
-                )}
+                  {c.dueAmount > 0 && (
+                    <button onClick={(e) => { e.stopPropagation(); setPayCustomer(c); }}
+                      className="flex-1 py-2 rounded-xl text-xs font-bold text-white transition"
+                      style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.25)" }}>
+                      💰 Payment Lo
+                    </button>
+                  )}
+                </div>
               </motion.div>
             );
           })}
