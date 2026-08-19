@@ -8,11 +8,13 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import ThemeToggle from "@/components/ThemeToggle";
 import EmployeeSalaryManager from "@/components/AllExpenseSummery";
 import CustomerDueManager from "@/components/CustomerDueManager";
+import RentManager from "@/components/RentManager";
 
 // ── Nav config ────────────────────────────────────────────────────
 const NAV = [
   { id: "employees", label: "Employees",    icon: "👷", accent: "#f59e0b" },
   { id: "due",       label: "Customer Due", icon: "💰", accent: "#10b981" },
+  { id: "rent",      label: "Room Rent",    icon: "🏠", accent: "#a855f7" },
 ];
 
 function BgGrid() {
@@ -168,6 +170,14 @@ export default function Dashboard() {
                 <ErrorBoundary label="Customer Due Manager">
                   <React.Suspense fallback={<SectionLoader />}>
                     <CustomerDueManager />
+                  </React.Suspense>
+                </ErrorBoundary>
+              )}
+
+              {activeTab === "rent" && (
+                <ErrorBoundary label="Room Rent Manager">
+                  <React.Suspense fallback={<SectionLoader />}>
+                    <RentManager />
                   </React.Suspense>
                 </ErrorBoundary>
               )}

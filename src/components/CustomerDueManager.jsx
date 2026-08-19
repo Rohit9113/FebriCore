@@ -2,16 +2,9 @@
 // src/components/CustomerDueManager.jsx
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import axios from "axios";
+import adminApi from "@/lib/adminApi";
 import { downloadBill } from "@/components/BillPDF";
-
-// ── API ──────────────────────────────────────────────────
-const api = axios.create({ baseURL: "/api" });
-api.interceptors.request.use((cfg) => {
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-  if (token) cfg.headers.Authorization = `Bearer ${token}`;
-  return cfg;
-});
+const api = adminApi;
 
 const TODAY = new Date().toISOString().split("T")[0];
 
@@ -29,7 +22,6 @@ const STATUS_CONFIG = {
   paid:    { label: "Paid",    bg: "bg-green-500/15",  text: "text-green-400",  border: "border-green-500/30"  },
 };
 
-// ── Toast ─────────────────────────────────────────────────────────
 function useToast() {
   const [toasts, setToasts] = useState([]);
   const show = useCallback((msg, type = "success") => {
@@ -55,7 +47,6 @@ function useToast() {
   );
   return { show, ToastContainer };
 }
-
 const emptyItem = () => ({
   name:           "",
   pieces:         "1",
@@ -135,12 +126,12 @@ function CustomerModal({ existing, onClose, onSave }) {
         onClick={onClose} className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60]" />
       <motion.div initial={{ opacity: 0, scale: 0.93, y: 24 }} animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.93, y: 24 }} transition={{ type: "spring", stiffness: 300, damping: 28 }}
-        className="fixed inset-0 z-[60] flex items-center justify-center p-4 overflow-y-auto">
+        className="fixed inset-0 z-[60] flex items-center justify-center p-4">
         <div onClick={(e) => e.stopPropagation()}
-          className="bg-[#0d0f1e] border border-white/10 rounded-2xl w-full max-w-xl shadow-2xl my-4">
+          className="bg-[#0d0f1e] border border-white/10 rounded-2xl w-full max-w-xl shadow-2xl max-h-[90vh] flex flex-col">
 
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-5 border-b border-white/8">
+          {/* Header — hamesha visible, scroll nahi hota */}
+          <div className="shrink-0 flex items-center justify-between px-6 py-5 border-b border-white/8">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center text-lg">
                 {isEdit ? "✏️" : "➕"}
@@ -154,7 +145,8 @@ function CustomerModal({ existing, onClose, onSave }) {
               className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition">✕</button>
           </div>
 
-          <div className="p-6 space-y-5">
+          {/* Body — sirf yeh hissa scroll hota hai */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-5">
             {/* Customer Info */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -283,16 +275,16 @@ function CustomerModal({ existing, onClose, onSave }) {
                 </motion.div>
               )}
             </div>
+          </div>
 
-            {/* Error */}
+          {/* Footer — Error + Save/Cancel hamesha yahin dikhte hain, chahe items list kitni bhi badi ho */}
+          <div className="shrink-0 border-t border-white/8 px-6 py-4 space-y-3">
             {error && (
               <div className="bg-red-500/10 border border-red-500/25 rounded-xl px-4 py-3">
                 <p className="text-red-400 text-sm">⚠️ {error}</p>
               </div>
             )}
-
-            {/* Buttons */}
-            <div className="flex gap-3 pt-1">
+            <div className="flex gap-3">
               <motion.button whileTap={{ scale: 0.97 }} onClick={handleSave} disabled={saving}
                 className="flex-1 py-3 rounded-xl font-bold text-sm text-black transition disabled:opacity-50"
                 style={{ background: "linear-gradient(135deg,#f59e0b,#f97316)", boxShadow: "0 4px 20px rgba(245,158,11,0.25)" }}>
